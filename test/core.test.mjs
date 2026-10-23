@@ -56,3 +56,18 @@ test('Responses function outputs and hosted-tool rejection are explicit', () => 
   assert.equal(n.messages[1].content[0].tool_use_id, 'c1');
   assert.throws(() => normalize('responses', { model: 'glm-5.3', input: 'hi', tools: [{ type: 'web_search_preview' }] }), /Unsupported/);
 });
+
+test('model controls are preserved and unsupported output guarantees are rejected',()=>{
+ const base={model:'glm-5.3-flash',input:'describe',temperature:0.7,top_p:0.95,top_k:40,reasoning:{effort:'high'}};
+ const n=normalize('responses',base);assert.equal(n.temperature,0.7);assert.equal(n.top_p,0.95);assert.equal(n.top_k,40);assert.equal(n.output_config.effort,'high');
+ assert.throws(()=>normalize('responses',{...base,reasoning:{effort:'none'}}),/disabling/);
+ assert.throws(()=>normalize('responses',{...base,temperature:9}),/temperature/);
+ assert.throws(()=>normalize('responses',{...base,text:{format:{type:'json_schema',schema:{}}}}),/Structured/);
+ assert.throws(()=>normalize('responses',{...base,tools:[{type:'function',name:'f',parameters:{},strict:true}]}),/Strict/);
+});
+test('base64 vision input is converted without fetching external URLs',()=>{
+ const image='data:image/png;base64,aGVsbG8=';
+ const n=normalize('chat',{model:'glm-5.3-flash',messages:[{role:'user',content:[{type:'text',text:'image?'},{type:'image_url',image_url:{url:image}}]}]});
+ assert.equal(n.messages[0].content[1].source.data,'aGVsbG8=');
+ assert.throws(()=>normalize('chat',{model:'glm-5.3',messages:[{role:'user',content:[{type:'image_url',image_url:{url:image}}]}]}),/text-only/);
+});

@@ -6,4 +6,4 @@ Node.js 24 native TypeScript, no production dependencies. Protocol conversion, a
 
 The service must not silently discard unsupported content or hosted tools. Account fallback is bounded and occurs before inference output; stream failure cannot replay a response already sent. Responses state is bounded, client-scoped and expires. The application is single-process per encrypted vault; replicas require separate vaults.
 
-Live tests require an entitled ZCode account. A second distinct account requires the owner to complete a second OAuth login. Automated multi-account verification must remain distinct from two-live-account proof.
+Live tests require an entitled ZCode account. A second distinct account requires owner authorization through a separate OAuth login or import of their authenticated desktop profile. Automated multi-account verification must remain distinct from two-live-account proof.

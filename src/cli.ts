@@ -5,14 +5,15 @@ import { randomBytes, createHash, createDecipheriv } from 'node:crypto';
 import { Vault } from './accounts.ts';
 import { beginLogin, finishLogin } from './oauth.ts';
 import { provision } from './templates.ts';
-import { createUpstream, refreshAccount } from './upstream.ts';
+import { createUpstream, refreshAccount, createQuotaReader } from './upstream.ts';
+import { quotaSummary, planSelection } from './plans.ts';
 import { createGateway } from './server.ts';
 
 const args=process.argv.slice(2),command=args[0] || 'help';
 const dir=resolve(process.env.ZCODE_DATA_DIR || './data');
 function envSecret(name: string){return process.env[name+'_FILE']?readFileSync(process.env[name+'_FILE']!,'utf8').trim():process.env[name] || '';}
 function vault(){return new Vault(join(dir,'accounts.enc'),envSecret('ZCODE_MASTER_KEY'));}
-function usage(){console.log(`ZCode Gateway\n\nnode src/cli.ts <command>\n\n  init                         Create local .env and data directory\n  provision <zcode.cjs>         Extract private templates from ZCode 3.16.3\n  login [zai|bigmodel] [label]  Authorize and add/update one account\n  import-desktop [label]        Import this user's existing ZCode login\n  accounts                     List account IDs and enabled models\n  quota                        Refresh account entitlements and balance\n  enable <id> / disable <id>    Change account eligibility\n  remove <id>                  Delete this local login (does not revoke upstream)\n  serve                        Run authenticated HTTP service\n\nRun with node --env-file=.env src/cli.ts after init.\n`);}
+function usage(){console.log(`ZCode Gateway\n\nnode src/cli.ts <command>\n\n  init                         Create local .env and data directory\n  provision <zcode.cjs>         Extract private templates from ZCode 3.16.3\n  login [zai|bigmodel] [label]  Authorize and add/update one account\n  import-desktop [label]        Import this user's existing ZCode login\n  accounts                     List account IDs and enabled models\n  quota / plans                Refresh account entitlements and balance\n  plan <id> start-plan         Select the default promotional/trial route\n  plan <id> coding-plan --key-file PATH --models MODEL,MODEL\n                               Select a subscription with its own key\n  enable <id> / disable <id>    Change account eligibility\n  remove <id>                  Delete this local login (does not revoke upstream)\n  serve                        Run authenticated HTTP service\n\nRun with node --env-file=.env src/cli.ts after init.\n`);}
 async function main(){
   if(command==='help'){usage();return;}
   if(command==='init'){
@@ -36,8 +37,11 @@ async function main(){
       const flow=await beginLogin(args[1] || 'zai');
       console.log('Open this one-time OAuth URL in your browser. Choose the ZCode account to add:\n'+flow.authorizeUrl);
       const cancel=new AbortController();process.once('SIGINT',()=>cancel.abort());
-      const account=await finishLogin(flow,{signal:cancel.signal});
-      const ready=await refreshAccount(account);ready.label=args[2] || 'ZCode account';
+      const account:any={...await finishLogin(flow,{signal:cancel.signal}),needsLogin:false};
+      const context=JSON.parse(readFileSync(join(dir,'template.json'),'utf8')).context;
+      account.deviceId=context?.deviceId || randomBytes(16).toString('hex');
+      const previous=v.accounts.find(a=>a.identity===account.identity);
+      const ready=await refreshAccount({...previous,...account});ready.label=args[2] || previous?.label || 'ZCode account';
       const saved=v.upsert(ready);console.log(JSON.stringify({id:saved.id,label:saved.label,models:saved.models}));return;
     }
     if(command==='import-desktop'){
@@ -50,15 +54,28 @@ async function main(){
       }
       const claims=JSON.parse(Buffer.from(token.split('.')[1],'base64url').toString());
       if(!claims.user_id)throw new Error('Desktop login omitted identity');
-      const ready=await refreshAccount({identity:'zai:'+claims.user_id,token,provider:'zai',models:[],label:args[1] || 'Desktop account'});
+      const context=JSON.parse(readFileSync(join(dir,'template.json'),'utf8')).context;
+      const previous=v.accounts.find(a=>a.identity==='zai:'+claims.user_id);
+      const ready=await refreshAccount({...previous,identity:'zai:'+claims.user_id,token,needsLogin:false,provider:'zai',deviceId:context?.deviceId,models:[],label:args[1] || 'Desktop account'});
       const saved=v.upsert(ready);console.log(JSON.stringify({id:saved.id,label:saved.label,models:saved.models}));return;
     }
     if(command==='accounts'){console.log(JSON.stringify(v.publicAccounts(),null,2));return;}
-    if(command==='quota'){
+    if(command==='plan'){
+      const a=v.accounts.find(x=>x.id===args[1]);if(!a)throw new Error('Account not found');
+      const next={...a,plan:args[2],needsLogin:false};
+      if(args[2]==='coding-plan'){
+        const keyIndex=args.indexOf('--key-file'),modelsIndex=args.indexOf('--models');
+        if(keyIndex>=0&&args[keyIndex+1])next.codingKey=readFileSync(resolve(args[keyIndex+1]),'utf8').trim();
+        if(modelsIndex>=0&&args[modelsIndex+1])next.codingModels=args[modelsIndex+1].split(',').map(x=>x.trim().toLowerCase());
+        if(!next.codingModels?.length)throw new Error('Set the subscription model IDs with --models');
+      }
+      planSelection(next);v.upsert(await refreshAccount(next));console.log(JSON.stringify(v.publicAccounts(),null,2));return;
+    }
+    if(command==='quota'||command==='plans'){
       for(const a of [...v.accounts]){
         try{v.upsert(await refreshAccount(a));}catch{a.needsLogin=true;v.save();console.log('Account '+a.id+' needs reauthorization or quota refresh failed');}
       }
-      console.log(JSON.stringify(v.publicAccounts(),null,2));return;
+      console.log(JSON.stringify(quotaSummary(v.accounts),null,2));return;
     }
     if(['enable','disable','remove'].includes(command)){
       const a=v.accounts.find(x=>x.id===args[1]);if(!a)throw new Error('Account not found');
@@ -67,9 +84,11 @@ async function main(){
     }
     if(command!=='serve')throw new Error('Unknown command');
     const template=JSON.parse(readFileSync(join(dir,'template.json'),'utf8'));
+    for(const a of v.accounts)if(!a.deviceId&&template.context?.deviceId)a.deviceId=template.context.deviceId;
+    v.save();
     const keys=envSecret('ZCODE_API_KEYS').split(',').map(x=>x.trim()).filter(Boolean);
     if(keys.some(k=>k.length<24))throw new Error('Every API key must contain at least 24 characters');
-    const server=createGateway({keys,models:()=>[...new Set(v.accounts.filter(a=>a.enabled&&!a.needsLogin).flatMap(a=>a.models))],generate:createUpstream(v,template)});
+    const server=createGateway({keys,models:()=>[...new Set(v.accounts.filter(a=>a.enabled&&!a.needsLogin).flatMap(a=>a.models))],generate:createUpstream(v,template),quota:createQuotaReader(v)});
     const host=process.env.HOST || '127.0.0.1',port=Number(process.env.PORT || 8080);
     server.listen(port,host,()=>console.log(JSON.stringify({event:'listening',host,port,accounts:v.accounts.length})));
     let stopping=false;

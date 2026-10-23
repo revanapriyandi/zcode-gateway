@@ -27,6 +27,8 @@ function parseArguments(value: any) { try { return typeof value === 'string' ? J
 
 export function normalize(format: string, body: any): any {
   if (!body || typeof body !== 'object' || !body.model) invalid('model is required');
+  if ((body.response_format && body.response_format.type !== 'text') || (body.text?.format && body.text.format.type !== 'text') || body.output_config?.format) invalid('Structured output guarantees are not supported by this upstream adapter');
+  if (body.n != null && body.n !== 1) invalid('Only one completion per request is supported');
   const model = String(body.model).replace(/^zcode\//, '').toLowerCase();
   if (!/^glm-[a-z0-9.\-]+$/.test(model)) invalid('Unsupported model identifier');
   const result: any = { model, max_tokens: body.max_output_tokens ?? body.max_completion_tokens ?? body.max_tokens ?? 8192, messages: [] };
@@ -76,6 +78,7 @@ export function normalize(format: string, body: any): any {
   if (body.tools?.length && body.tool_choice !== 'none') {
     result.tools = body.tools.map(t => {
       const f = format === 'messages' ? t : format === 'responses' ? t : t.function;
+      if (f?.strict === true) invalid('Strict function-schema enforcement is not supported by this upstream adapter');
       if (format !== 'messages' && t.type !== 'function') invalid('Unsupported hosted tool: ' + t.type);
       if (!f?.name) invalid('Function name is required');
       return { name: f.name, ...(f.description ? { description: f.description } : {}), input_schema: f.input_schema || f.parameters || { type: 'object', properties: {} } };
@@ -86,9 +89,16 @@ export function normalize(format: string, body: any): any {
     result.tool_choice = typeof t === 'string' ? { type: t === 'required' ? 'any' : t } : t.type === 'function' ? { type: 'tool', name: t.name || t.function?.name } : t;
   }
   if (body.parallel_tool_calls === false && result.tools) result.tool_choice = { ...(result.tool_choice || { type: 'auto' }), disable_parallel_tool_use: true };
-  if (body.reasoning_effort && !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(body.reasoning_effort)) invalid('Unsupported reasoning effort');
-  if (body.reasoning_effort === 'none' || body.thinking?.type === 'disabled') invalid('GLM-5.3 always reasons; disabling thinking is unsupported');
-  if (body.reasoning_effort) result.output_config = { effort: ['minimal','low','medium'].includes(body.reasoning_effort) ? 'low' : ['xhigh','max'].includes(body.reasoning_effort) ? 'max' : 'high' };
+  const effort=body.reasoning_effort ?? body.reasoning?.effort ?? body.output_config?.effort;
+  if (effort && !['none','minimal','low','medium','high','xhigh','max'].includes(effort)) invalid('Unsupported reasoning effort');
+  if (effort === 'none' || body.thinking?.type === 'disabled') invalid('GLM-5.3 always reasons; disabling thinking is unsupported');
+  if (effort) result.output_config = { effort: ['minimal','low'].includes(effort) ? 'low' : ['xhigh','max'].includes(effort) ? 'max' : 'high' };
+  for (const [name,min,max] of [['temperature',0,1],['top_p',0,1],['top_k',0,1000]] as const) {
+    if(body[name] == null)continue;
+    if(typeof body[name] !== 'number'||!Number.isFinite(body[name])||body[name]<min||body[name]>max||(name==='top_k'&&!Number.isInteger(body[name])))invalid('Invalid '+name);
+    result[name]=body[name];
+  }
+  if(model==='glm-5.3'&&result.messages.some(m=>m.content.some(c=>c.type==='image')))invalid('GLM-5.3 is text-only; use an image-capable model such as GLM-5.3-Flash');
   if (body.thinking && body.thinking.type !== 'disabled') result.thinking = body.thinking;
   if (body.stop || body.stop_sequences) result.stop_sequences = typeof body.stop === 'string' ? [body.stop] : body.stop_sequences || body.stop;
   return result;

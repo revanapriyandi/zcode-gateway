@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { readEvents } from '../src/stream.ts';
 import { createGateway } from '../src/server.ts';
 
 const result = {id:'msg_test',model:'glm-5.3',content:[{type:'text',text:'answer'}],stop_reason:'end_turn',usage:{input_tokens:3,output_tokens:2}};
@@ -31,4 +32,23 @@ test('chat streaming emits incremental chunks and terminal usage',async()=>{
     const r=await fetch(url+'/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer test-client-secret','Content-Type':'application/json'},body:JSON.stringify({model:'glm-5.3',stream:true,messages:[{role:'user',content:'hi'}]})});
     const text=await r.text();assert.match(text,/"content":"an"/);assert.match(text,/"content":"swer"/);assert.match(text,/\[DONE\]/);assert.match(text,/"total_tokens":5/);
   }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+
+test('quota endpoints require authentication and expose stable dot-free mappings',async()=>{
+ const summary={plan:'Test grant',quotaBuckets:{glm_5_3:{total:200,used:12,remaining:188}}};
+ const server=createGateway({keys:['test-client-secret'],models:()=>[],quota:async()=>summary});
+ server.listen(0,'127.0.0.1');await once(server,'listening');
+ const url='http://127.0.0.1:'+server.address().port;
+ try{
+  assert.equal((await fetch(url+'/api/usage')).status,401);
+  for(const path of ['/api/usage','/api/plans']){
+   const r=await fetch(url+path,{headers:{Authorization:'Bearer test-client-secret'}});assert.equal(r.status,200);assert.equal(r.headers.get('cache-control'),'no-store');assert.deepEqual(await r.json(),summary);
+  }
+ }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+
+test('SSE framing survives CRLF split across network chunks',async()=>{
+ const data=['event: message_stop\r','\ndata: {"type":"message_stop"}\r','\n\r','\n'];
+ const stream=new ReadableStream({start(c){for(const text of data)c.enqueue(new TextEncoder().encode(text));c.close();}});
+ const events=[];for await(const e of readEvents(stream))events.push(e);assert.deepEqual(events,[{type:'message_stop'}]);
 });

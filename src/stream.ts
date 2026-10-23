@@ -12,7 +12,7 @@ export async function write(res: any, value: string | Uint8Array) {
 export async function* readEvents(body: ReadableStream) {
   const reader=body.getReader(),decoder=new TextDecoder();let pending='';
   try{
-    for(;;){const {value,done}=await reader.read();if(done)break;pending+=decoder.decode(value,{stream:true}).replace(/\r\n/g,'\n');
+    for(;;){const {value,done}=await reader.read();if(done)break;pending=(pending+decoder.decode(value,{stream:true})).replace(/\r\n/g,'\n');
       if(pending.length>8*1024*1024)throw new Error('Upstream SSE event too large');
       let split;while((split=pending.indexOf('\n\n'))>=0){const frame=pending.slice(0,split);pending=pending.slice(split+2);const data=frame.split('\n').filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trimStart()).join('\n');if(data&&data!=='[DONE]')yield JSON.parse(data);}
     }

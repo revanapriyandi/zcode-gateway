@@ -1,11 +1,13 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import os from 'node:os';
 import path from 'node:path';
 
 export function clientContext() {
-  return { platform:process.platform,arch:os.arch(),release:os.release(),cwd:process.cwd(),shell:process.platform==='win32'?'pwsh.exe':path.basename(process.env.SHELL || 'sh'),locale:Intl.DateTimeFormat().resolvedOptions().locale,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone };
+  const telemetry=path.join(os.homedir(),'.zcode/v2/telemetry-state.json');let deviceId;
+  if(existsSync(telemetry)){try{deviceId=JSON.parse(readFileSync(telemetry,'utf8')).deviceMid;}catch{}}
+  return { platform:process.platform,arch:os.arch(),release:os.release(),cwd:process.cwd(),shell:process.platform==='win32'?'pwsh.exe':path.basename(process.env.SHELL || 'sh'),locale:Intl.DateTimeFormat().resolvedOptions().locale,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,...deviceId?{deviceId}:{} };
 }
 
 // Only supported prompt-only functions are evaluated, in an empty VM. The
@@ -57,7 +59,7 @@ export function prepareRequest(request: any, template: any) {
     { type:'text', text:template.stable+(caller?'\n\n# Application Instructions\n'+caller:''), cache_control:{type:'ephemeral'} },
     { type:'text', text:'\n\n'+[template.before,env,template.after].join('\n\n'), cache_control:{type:'ephemeral'} },
   ];
-  const date = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Jakarta',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  const date = new Intl.DateTimeFormat('en-CA',{timeZone:context.timezone || 'UTC',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   b.messages.unshift({role:'user',content:[{type:'text',text:"<system-reminder>As you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is "+date+".\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.</system-reminder>"}]});
   for (const m of b.messages) for (const c of m.content || []) delete c.cache_control;
   const last = b.messages.at(-1)?.content?.at(-1); if(last && ['text','image','tool_result'].includes(last.type)) last.cache_control={type:'ephemeral'};

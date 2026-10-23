@@ -38,7 +38,7 @@ export class Vault {
     this.save(); return account;
   }
   publicAccounts() {
-    return this.accounts.map(({ id, label, models, enabled, quota, updatedAt, needsLogin }) => ({ id, label, models, enabled, quota, updatedAt, needsLogin }));
+    return this.accounts.map(({ id, label, models, enabled, quota, updatedAt, needsLogin, plan, selectedPlanId, plans }) => ({ id, label, models, enabled, quota, updatedAt, needsLogin, plan:plan || 'start-plan', selectedPlanId, plans }));
   }
 }
 

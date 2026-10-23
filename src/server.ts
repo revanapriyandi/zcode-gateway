@@ -18,8 +18,12 @@ export function createGateway(options: any) {
       if(req.method==='GET'&&url.pathname==='/health'){
         res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'ok',models:options.models().length}));return;
       }
+      if(req.method==='GET'&&['/api/usage','/api/plans'].includes(url.pathname)){
+        if(!options.quota)throw Object.assign(new Error('Quota reporting is not configured'),{status:503});
+        const summary=await options.quota();res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(summary));return;
+      }
       if(req.method==='GET'&&url.pathname==='/v1/models'){
-        res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({object:'list',data:options.models().map(id=>({id,object:'model',created:0,owned_by:'zcode'}))}));return;
+        res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({object:'list',data:options.models().map(id=>({id,object:'model',created:0,owned_by:'zcode',...(id==='glm-5.3'||id==='glm-5.3-flash'?{context_window:1000000,max_output_tokens:128000,capabilities:{input:['text',...(id.endsWith('-flash')?['image']:[])],output:['text'],reasoning:true,tools:true,streaming:true}}:{})}))}));return;
       }
       const routes={'/v1/messages':'messages','/v1/chat/completions':'chat','/v1/responses':'responses'};
       format=routes[url.pathname];

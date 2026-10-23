@@ -13,6 +13,10 @@ This is an independent integration with an undocumented ZCode endpoint. It is no
 | `POST /v1/messages` | Yes | Yes | Anthropic `tool_use` and `tool_result` |
 | `GET /v1/models` | Enabled account entitlements | — | — |
 | `GET /health` | Authenticated process health | — | — |
+| `GET /api/usage` | Provider quota with 60-second cache | — | — |
+| `GET /api/plans` | Account packages and selected routes | — | — |
+
+Sampling controls (`temperature` from 0 to 1, `top_p` from 0 to 1 and integer `top_k` up to 1000) are validated and forwarded. Reasoning effort is accepted from Chat Completions `reasoning_effort`, Responses `reasoning.effort` or Anthropic `output_config.effort`. Structured-output and strict-schema guarantees return an explicit unsupported error.
 
 The gateway returns tool requests to the caller. It never runs shell commands, opens files or executes tools on the server. OpenAI hosted tools such as code interpreter and web search are not supplied by this gateway; unsupported tool types return an error. Using an OpenAI or Anthropic API format does not change which upstream model you are using.
 
@@ -70,6 +74,48 @@ Selection rotates among enabled, model-entitled accounts, with one in-flight req
 
 The vault is AES-256-GCM encrypted with a separate master key. One process owns a vault at a time. Stop the service before administration, and back up both encrypted data and the master key securely. After an unclean process exit, verify that its PID is no longer running before removing a stale `data/vault.lock`.
 
+## Choose a package or subscription
+
+Every account defaults to `start-plan`. Active packages, model entitlements, expiry and reported token buckets are discovered from the account. New packages on the same route appear on the next quota refresh. The upstream decides which promotional bucket is charged; the gateway cannot force an arbitrary bucket ID.
+
+```sh
+node --env-file=.env src/cli.ts plans
+node --env-file=.env src/cli.ts plan ACCOUNT_ID start-plan
+node --env-file=.env src/cli.ts plan ACCOUNT_ID coding-plan --key-file /private/subscription-key --models glm-5.3,glm-5.3-flash
+```
+
+The subscription key is read from a private file and encrypted inside the vault. Switching routes changes only that account. Reauthorizing an existing identity preserves its chosen route. Coding Plan uses its own subscription Anthropic endpoint and key, independently of Start Plan JWT expiry. This optional route has fixture coverage; a paid account is required for live validation. Unknown subscription counters remain unknown. Switching back to `start-plan` restores discovery from the promotional route. See the [provider's subscription configuration](https://docs.z.ai/devpack/tool/claude).
+
+Billing reads require the original `X-Device-Mid`. Provisioning records it privately from the desktop telemetry file when available. Login and import retain it with the account. A missing device ID can make quota unavailable. Quota expiry timestamps denote the end of a grant, not a promise of daily reset.
+
+OmniRoute custom providers can display counters in **Provider Quotas** using the connection's `providerSpecificData.quotaEndpoint`:
+
+```json
+{
+  "url": "http://zcode-gateway:8080/api/usage",
+  "auth": "bearer",
+  "plan": "plan",
+  "quotas": {
+    "glm-5.3-flash": {
+      "total": "quotaBuckets.glm_5_3_flash.total",
+      "used": "quotaBuckets.glm_5_3_flash.used",
+      "remaining": "quotaBuckets.glm_5_3_flash.remaining",
+      "resetAt": "quotaBuckets.glm_5_3_flash.resetAt",
+      "displayName": "GLM-5.3-FLASH tokens (grant expiry)"
+    },
+    "glm-5.3": {
+      "total": "quotaBuckets.glm_5_3.total",
+      "used": "quotaBuckets.glm_5_3.used",
+      "remaining": "quotaBuckets.glm_5_3.remaining",
+      "resetAt": "quotaBuckets.glm_5_3.resetAt",
+      "displayName": "GLM-5.3 tokens (grant expiry)"
+    }
+  }
+}
+```
+
+`quotaBuckets` has dot-free field names because OmniRoute splits mapping paths at dots. `quotas` retains the model IDs. The connection uses its existing gateway client key; no upstream login is exposed to OmniRoute. It shows totals across enabled accounts. `/api/usage` also exposes per-account counters and quota errors. Add mappings for new model buckets when other packages expose them.
+
 ## Connect clients
 
 Use your private gateway client key in these examples:
@@ -91,7 +137,7 @@ export ANTHROPIC_MODEL=glm-5.3-flash
 
 For an OpenAI Chat Completions client, use base URL `http://127.0.0.1:8080/v1`. For a Responses client, use the same base with the Responses wire protocol and model `glm-5.3-flash` or `glm-5.3`.
 
-In OmniRoute, create an **OpenAI-compatible / Chat Completions** provider with the bridge's reachable `/v1` base URL and its client key. Import models from `/v1/models`. A Claude-compatible caller may then use OmniRoute's existing protocol translation. Direct Anthropic access to this bridge is also supported.
+In OmniRoute, create an **OpenAI-compatible / Chat Completions** provider with the bridge's reachable `/v1` base URL and its client key. Import models from `/v1/models`. A Claude-compatible caller may then use OmniRoute's existing protocol translation. Direct Anthropic access to this bridge is also supported. OmniRoute may require its request-log storage to resolve `previous_response_id`; when that storage is disabled, send the complete Responses history instead. Direct bridge continuation uses its own bounded in-memory store. The integration does not enable global prompt logging.
 
 ## Docker
 
@@ -119,7 +165,7 @@ Use a reverse proxy with TLS if clients reach the gateway across an untrusted ne
 ## Limits
 
 - Required ZCode identity/context text adds input tokens and influences model behavior. Caller instructions are merged into the required stable context block, not sent as a fourth system block.
-- GLM-5.3 always reasons; requests that disable thinking return a clear error. Supported effort values are mapped to the upstream's low/high/max levels.
+- GLM-5.3 always reasons; requests that disable thinking return a clear error. Effort mapping is minimal/low to low, medium/high to high, xhigh/max to max. See the [provider thinking documentation](https://docs.z.ai/guides/capabilities/thinking).
 - Responses history is in memory, scoped by API key, expires after one hour and is limited to 100 records of at most 512 KiB each. Restarting the server clears it. With `store:false`, supply the full history yourself.
 - Images require PNG/JPEG/WebP/GIF base64 input. Remote image URLs and other modalities are rejected. Actual image availability depends on the selected model and entitlement.
 - Request body limit is 8 MiB and request deadline is 180 seconds. This is not a complete implementation of every OpenAI or Anthropic product feature.
@@ -131,9 +177,13 @@ Use a reverse proxy with TLS if clients reach the gateway across an untrusted ne
 npm test
 npm run check
 node --env-file=.env scripts/smoke.mjs
+node --env-file=.env scripts/tools-smoke.mjs
+node --env-file=.env scripts/capabilities-smoke.mjs
 ```
 
-The smoke test spends a small amount of your own upstream quota. It checks JSON and SSE on all three protocols, Responses continuation, and a synthetic weather-tool call/result round trip. The synthetic tool returns a fixed marker; no weather service or external tool runs. Set `TEST_BASE_URL`, `TEST_API_KEY` and `TEST_MODEL` to target another deployment. Tests using fake accounts establish scheduler behavior, not proof of authorization on two real accounts.
+The live smoke scripts spend a small amount of upstream quota. They cover JSON and SSE on all three protocols, Responses continuation, tool results on all protocols, streamed function deltas, and Flash vision with low reasoning effort. The tools use fixed synthetic results and never call a weather service. The image test generates a red/blue PNG entirely in memory.
+
+Set `TEST_BASE_URL`, `TEST_API_KEY` and `TEST_MODEL` to target another deployment. Set `TEST_STATELESS=1` for the tools test when using OmniRoute without stored request logs. Run sequentially with a single account. Tests using fake accounts establish scheduler behavior; live verification is recorded separately in [docs/verification.md](docs/verification.md).
 
 ## Research and provenance
 
