@@ -16,7 +16,13 @@ export class Vault {
       const d = createDecipheriv('aes-256-gcm', this.key, Buffer.from(r.iv, 'base64'));
       d.setAAD(Buffer.from('zcode-gateway:v1'));
       d.setAuthTag(Buffer.from(r.tag, 'base64'));
-      this.accounts = JSON.parse(Buffer.concat([d.update(Buffer.from(r.data, 'base64')), d.final()]).toString());
+      let plaintext: Buffer;
+      try {
+        plaintext = Buffer.concat([d.update(Buffer.from(r.data, 'base64')), d.final()]);
+      } catch {
+        throw Object.assign(new Error('Cannot decrypt account vault at '+file+'. The configured ZCODE_MASTER_KEY (or ZCODE_MASTER_KEY_FILE) does not match this vault, or the encrypted file was damaged. Restore the original key and matching vault backup. Check shell environment overrides when using --env-file. Do not delete the vault or generate a new master key to fix this.'), { code: 'VAULT_DECRYPTION_FAILED' });
+      }
+      this.accounts = JSON.parse(plaintext.toString());
       if (!Array.isArray(this.accounts)) throw new Error('Invalid account vault');
     }
   }

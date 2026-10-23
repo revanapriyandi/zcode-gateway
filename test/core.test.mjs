@@ -36,6 +36,24 @@ test('pool rotates eligible accounts, observes inflight and cooldown', () => {
   assert.throws(() => p.acquire('not-entitled'));
 });
 
+test('wrong vault key explains recovery and preserves the encrypted accounts', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'zc-key-'));
+  try {
+    const file = join(dir, 'accounts.enc');
+    new Vault(file, 'a'.repeat(64)).upsert({ identity: 'one', token: 'private-token', models: ['glm-5.3'] });
+    const before = readFileSync(file);
+    assert.throws(() => new Vault(file, 'b'.repeat(64)), error => {
+      assert.equal(error.code, 'VAULT_DECRYPTION_FAILED');
+      assert.match(error.message, /ZCODE_MASTER_KEY/);
+      assert.match(error.message, /Do not delete/);
+      assert.ok(!error.message.includes('b'.repeat(64)));
+      return true;
+    });
+    assert.deepEqual(readFileSync(file), before);
+    assert.equal(new Vault(file, 'a'.repeat(64)).accounts.length, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('chat tool calls and tool results preserve identity and parsed arguments', () => {
   const n = normalize('chat', { model: 'glm-5.3', messages: [
     { role: 'system', content: 'system rules' },

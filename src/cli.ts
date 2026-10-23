@@ -8,6 +8,7 @@ import { provision } from './templates.ts';
 import { createUpstream, refreshAccount, createQuotaReader } from './upstream.ts';
 import { quotaSummary, planSelection } from './plans.ts';
 import { createGateway } from './server.ts';
+import { openLoginBrowser, loginLink } from './browser.ts';
 
 const args=process.argv.slice(2),command=args[0] || 'help';
 const dir=resolve(process.env.ZCODE_DATA_DIR || './data');
@@ -15,10 +16,11 @@ function envSecret(name: string){return process.env[name+'_FILE']?readFileSync(p
 function vault(){return new Vault(join(dir,'accounts.enc'),envSecret('ZCODE_MASTER_KEY'));}
 function usage(){console.log(`ZCode Gateway\n\nnode src/cli.ts <command>\n\n  init                         Create local .env and data directory\n  provision <zcode.cjs>         Extract private templates from ZCode 3.16.3\n  login [zai|bigmodel] [label]  Authorize and add/update one account\n  import-desktop [label]        Import this user's existing ZCode login\n  accounts                     List account IDs and enabled models\n  quota / plans                Refresh account entitlements and balance\n  plan <id> start-plan         Select the default promotional/trial route\n  plan <id> coding-plan --key-file PATH --models MODEL,MODEL\n                               Select a subscription with its own key\n  enable <id> / disable <id>    Change account eligibility\n  remove <id>                  Delete this local login (does not revoke upstream)\n  serve                        Run authenticated HTTP service\n\nRun with node --env-file=.env src/cli.ts after init.\n`);}
 async function main(){
-  if(command==='help'){usage();return;}
+  if(command==='help'){usage();console.log('Login opens your default browser; append --no-browser for SSH or manual authorization.');return;}
   if(command==='init'){
     mkdirSync(dir,{recursive:true,mode:0o700});
     if(existsSync('.env'))throw new Error('.env already exists');
+    if(existsSync(join(dir,'accounts.enc')))throw new Error('Found an existing account vault at '+join(dir,'accounts.enc')+'. Restore its original .env / ZCODE_MASTER_KEY instead of generating unrelated keys. No files were changed.');
     writeFileSync('.env',`ZCODE_MASTER_KEY=${randomBytes(32).toString('hex')}\nZCODE_API_KEYS=${randomBytes(32).toString('hex')}\nZCODE_DATA_DIR=./data\nHOST=127.0.0.1\nPORT=8080\n`,{mode:0o600,flag:'wx'});
     console.log('Created .env with private random keys. Keep it outside Git.');return;
   }
@@ -34,14 +36,17 @@ async function main(){
     }
     const v=vault();
     if(command==='login'){
-      const flow=await beginLogin(args[1] || 'zai');
-      console.log('Open this one-time OAuth URL in your browser. Choose the ZCode account to add:\n'+flow.authorizeUrl);
+      const loginArgs=args.slice(1).filter(arg=>arg!=='--no-browser');
+      const flow=await beginLogin(loginArgs[0] || 'zai');
       const cancel=new AbortController();process.once('SIGINT',()=>cancel.abort());
+      console.log('Open this one-time OAuth URL in your browser. Choose the ZCode account to add:\n'+flow.authorizeUrl);
+      if(process.stdout.isTTY&&process.env.TERM!=='dumb')console.log(loginLink(flow.authorizeUrl,true));
+      if(!args.includes('--no-browser'))console.log(await openLoginBrowser(flow.authorizeUrl)?'Opened the default browser. Complete authorization there; this terminal is waiting.':'Could not open a browser automatically. Copy the complete URL above into your browser; this terminal is waiting.');
       const account:any={...await finishLogin(flow,{signal:cancel.signal}),needsLogin:false};
       const context=JSON.parse(readFileSync(join(dir,'template.json'),'utf8')).context;
       account.deviceId=context?.deviceId || randomBytes(16).toString('hex');
       const previous=v.accounts.find(a=>a.identity===account.identity);
-      const ready=await refreshAccount({...previous,...account});ready.label=args[2] || previous?.label || 'ZCode account';
+      const ready=await refreshAccount({...previous,...account});ready.label=loginArgs[1] || previous?.label || 'ZCode account';
       const saved=v.upsert(ready);console.log(JSON.stringify({id:saved.id,label:saved.label,models:saved.models}));return;
     }
     if(command==='import-desktop'){

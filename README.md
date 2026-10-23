@@ -1,5 +1,7 @@
 # ZCode Gateway
 
+[English](README.md) | [Bahasa Indonesia](README.id.md)
+
 Use your own ZCode Start Plan accounts through OpenAI and Anthropic-compatible APIs. This standalone Node.js gateway supports OAuth login, an encrypted multi-account vault, streamed model output and function-tool conversations. It can run behind OmniRoute or be used directly.
 
 This is an independent integration with an undocumented ZCode endpoint. It is not affiliated with Z.ai. Compatibility was checked against ZCode desktop **3.16.3**, with **GLM-5.3** and **GLM-5.3-Flash** entitlements. Provider changes can break the integration.
@@ -47,6 +49,8 @@ The private template also records the provisioning machine's platform, shell, lo
 
 OAuth login prints a one-time authorization link. Open it in your browser, choose the account and authorize. Polling completes in the CLI without a localhost callback. To add a second account, run login again and select a different account in the browser. Reauthorizing the same identity updates its credentials instead of duplicating it. The CLI supports `zai` and `bigmodel` authorization; live verification in the initial release uses Z.ai.
 
+Login also opens your default browser automatically and prints a short clickable link in terminals that support OSC 8 hyperlinks. The full URL remains available for manual copying. Terminal link behavior varies; in Git Bash, Ctrl+click may be required. Use `login zai "Account one" --no-browser` over SSH or when you prefer to open the URL yourself. If browser launch fails, the CLI continues waiting for manual authorization.
+
 If you already signed in using the local ZCode desktop application:
 
 ```sh
@@ -73,6 +77,12 @@ Selection rotates among enabled, model-entitled accounts, with one in-flight req
 `quota` reads reported plan and balance data. Unknown counters remain unknown. The scheduler uses entitlements and provider errors, rather than guessing token balances from missing fields. Promotions are not automatically claimed.
 
 The vault is AES-256-GCM encrypted with a separate master key. One process owns a vault at a time. Stop the service before administration, and back up both encrypted data and the master key securely. After an unclean process exit, verify that its PID is no longer running before removing a stale `data/vault.lock`.
+
+If `accounts`, `login` and `import-desktop` all fail with `Cannot decrypt account vault` (older releases printed `Unsupported state or unable to authenticate data`), the error occurs while opening the gateway vault, before OAuth or desktop import. Restore the original `ZCODE_MASTER_KEY` associated with that `data/accounts.enc`. Keep the current `.env` and encrypted vault as a private backup first. The same error can also indicate a damaged vault, so verify a known matching key before concluding that the file is corrupt.
+
+Do not delete `accounts.enc` or rerun `init` with existing data to recover accounts: a newly generated key cannot unlock the previous vault. `init` refuses to generate keys when an existing vault is present. Keep each deployment's `.env` and data directory paired. When copying a vault between machines, its original master key must accompany it securely; client API keys can be different.
+
+Node's `--env-file=.env` preserves variables already set in the shell, and `ZCODE_MASTER_KEY_FILE` takes priority over `ZCODE_MASTER_KEY`. Check for stale overrides if the correct `.env` still fails. Never paste master keys, client keys, or account tokens into an issue or terminal transcript.
 
 ## Choose a package or subscription
 
