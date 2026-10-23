@@ -31,7 +31,7 @@ No account credential, master key, private vendor prompt template or environment
 
 ## Compatibility boundaries
 
-Initially, OmniRoute request detail storage was disabled, so public previous_response_id returned previous_response_not_found. After the owner explicitly requested logging, detailed storage and management-key logging were enabled; array-input continuation passed. Individual customer No-Log preferences remain unchanged. See follow-up verification below.
+Initially, OmniRoute request detail storage was disabled, so public previous_response_id returned previous_response_not_found. After the owner explicitly requested logging, detailed storage and management-key logging were enabled; array-input continuation passed. At that stage individual customer No-Log preferences were preserved; the owner subsequently requested logging for every key and the default was aligned accordingly. See follow-up verification below.
 
 Start Plan is the default account route. Package discovery and dot-free quota mapping have automated coverage. The optional Coding Plan subscription route uses a separate credential and endpoint; its billing balance remains unknown and a live paid-subscription request is not claimed.
 
@@ -39,6 +39,8 @@ The independent reviewer could not start because the configured inherited agent 
 
 ## Follow-up verification
 
-Owner-requested detailed request logging was enabled in OmniRoute along with logging for the management test key; customer keys retain their individual No-Log preferences. Responses previous_response_id with function tools passed through public OmniRoute when the initial input was an array of messages. The earlier string-input test cannot be resumed by OmniRoute 3.8.52-web because its history reader requires an array.
+Owner-requested detailed request logging was enabled in OmniRoute along with logging for the management test key; customer keys initially retained individual No-Log preferences; the owner later requested all keys use logging by default. Responses previous_response_id with function tools passed through public OmniRoute when the initial input was an array of messages. The earlier string-input test cannot be resumed by OmniRoute 3.8.52-web because its history reader requires an array.
 
 Low, high and max effort requests all succeeded. The persisted OmniRoute pipeline recorded the same reasoning_effort value in clientRawRequest.body and providerRequest.body for each level. This establishes parameter forwarding, not a quantified change in model quality or internal compute. Discovery metadata was configured to advertise the three supported effort levels.
+
+The subsequent owner instruction enabled per-key logging by default: all 13 existing router keys were read back with noLog=false, and the portal createKey/applyPlan defaults were updated to false in commit 6b2dacf. Detail retention remains 30 days. Management uses an existing oma_ access token; /v1/models needs a separate router service API key on this OmniRoute release. Upstream provider credentials are not used as platform-management credentials.
