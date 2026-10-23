@@ -1,204 +1,300 @@
 # ZCode Gateway
 
-[English](README.md) | [Bahasa Indonesia](README.id.md)
+[Bahasa Indonesia](README.md) | [English](README.en.md)
 
-Use your own ZCode Start Plan accounts through OpenAI and Anthropic-compatible APIs. This standalone Node.js gateway supports OAuth login, an encrypted multi-account vault, streamed model output and function-tool conversations. It can run behind OmniRoute or be used directly.
+Pakai model dari akun ZCode Anda di OmniRoute atau aplikasi yang mendukung API OpenAI dan Anthropic. Anda bisa menambahkan beberapa akun, melihat sisa kuota, dan memilih paket untuk tiap akun.
 
-This is an independent integration with an undocumented ZCode endpoint. It is not affiliated with Z.ai. Compatibility was checked against ZCode desktop **3.16.3**, with **GLM-5.3** and **GLM-5.3-Flash** entitlements. Provider changes can break the integration.
+Sudah diuji dengan ZCode **3.16.3**, **GLM-5.3**, dan **GLM-5.3-Flash**. Proyek ini dibuat secara independen. Jika ZCode mengubah layanannya, integrasi ini mungkin perlu diperbarui.
 
-## Supported endpoints
+## Mulai dari sini
 
-| Endpoint | JSON | SSE | Function tools |
-|---|---|---|---|
-| `POST /v1/chat/completions` | Yes | Yes | Calls and results |
-| `POST /v1/responses` | Yes | Yes | Calls, outputs and `previous_response_id` |
-| `POST /v1/messages` | Yes | Yes | Anthropic `tool_use` and `tool_result` |
-| `GET /v1/models` | Enabled account entitlements | — | — |
-| `GET /health` | Authenticated process health | — | — |
-| `GET /api/usage` | Provider quota with 60-second cache | — | — |
-| `GET /api/plans` | Account packages and selected routes | — | — |
+Siapkan Node.js **24.14 atau lebih baru** dan aplikasi ZCode yang sudah terpasang. Jalankan perintah berikut dari folder proyek.
 
-Sampling controls (`temperature` from 0 to 1, `top_p` from 0 to 1 and integer `top_k` up to 1000) are validated and forwarded. Reasoning effort is accepted from Chat Completions `reasoning_effort`, Responses `reasoning.effort` or Anthropic `output_config.effort`. Structured-output and strict-schema guarantees return an explicit unsupported error.
-
-The gateway returns tool requests to the caller. It never runs shell commands, opens files or executes tools on the server. OpenAI hosted tools such as code interpreter and web search are not supplied by this gateway; unsupported tool types return an error. Using an OpenAI or Anthropic API format does not change which upstream model you are using.
-
-## Local setup
-
-Requires Node.js **24.14 or newer**. There are no npm production dependencies.
+### 1. Unduh proyek
 
 ```sh
 git clone https://github.com/revanapriyandi/zcode-gateway.git
 cd zcode-gateway
+```
+
+### 2. Buat pengaturan awal
+
+```sh
 node src/cli.ts init
-node --env-file=.env src/cli.ts provision "/path/to/official/ZCode/resources/glm/zcode.cjs"
-node --env-file=.env src/cli.ts login zai "Account one"
+```
+
+Perintah ini membuat file `.env` dan folder `data`. Cukup jalankan sekali saat pertama memasang.
+
+Buka `.env`. Ada dua pengaturan yang perlu Anda kenali:
+
+| Nama di `.env` | Dipakai untuk apa? |
+|---|---|
+| `ZCODE_API_KEYS` | Isi kolom **API Key** di OmniRoute atau aplikasi yang akan terhubung ke ZCode Gateway. |
+| `ZCODE_MASTER_KEY` | Membuka data akun yang tersimpan. Jangan diganti selama masih memakai data akun tersebut. |
+
+**Untuk mengisi API Key, salin nilai setelah `ZCODE_API_KEYS=`.** Jangan ikut menyalin nama pengaturan atau tanda `=`. Jika ada beberapa nilai yang dipisahkan koma, pilih salah satu.
+
+Nilainya dibuat otomatis oleh `init`; Anda tidak perlu mencarinya di situs ZCode. Simpan `.env` dan folder `data` sebagai pasangan saat membuat cadangan atau pindah komputer.
+
+### 3. Siapkan file dari aplikasi ZCode
+
+Untuk instalasi Windows di lokasi berikut:
+
+```sh
+node --env-file=.env src/cli.ts provision "C:/Program Files/ZCode/resources/glm/zcode.cjs"
+```
+
+Ganti lokasi file jika ZCode Anda terpasang di folder lain. Untuk sistem lain, gunakan lokasi `resources/glm/zcode.cjs` dari instalasi ZCode Anda.
+
+Perintah ini membuat `data/template.json` dari aplikasi ZCode yang terpasang. File ini diperlukan agar request bisa dikirim ke ZCode. Instalasi ZCode Anda tetap seperti semula.
+
+### 4. Tambahkan akun
+
+Pilih salah satu cara berikut.
+
+**Pakai akun yang sudah login di aplikasi ZCode pada komputer ini:**
+
+```sh
+node --env-file=.env src/cli.ts import-desktop "Akun pertama"
+```
+
+**Atau login lewat browser:**
+
+```sh
+node --env-file=.env src/cli.ts login zai "Akun pertama"
+```
+
+Browser akan terbuka otomatis. Pilih akun dan setujui login, lalu tunggu sampai terminal menampilkan hasilnya. Biarkan terminal tetap berjalan selama Anda menyelesaikan login.
+
+Jika browser tidak terbuka, salin URL lengkap yang muncul di terminal. Tautan pendek **Open ZCode login** juga bisa dipakai pada terminal yang mendukungnya; Git Bash mungkin memerlukan Ctrl+klik.
+
+`"Akun pertama"` hanya nama penanda. Anda bebas menggantinya agar mudah mengenali akun.
+
+### 5. Jalankan ZCode Gateway
+
+```sh
 node --env-file=.env src/cli.ts serve
 ```
 
-On a typical Windows installation, provision with:
+Biarkan terminal ini berjalan. Alamat API bawaan adalah `http://127.0.0.1:8080/v1`.
 
-```powershell
-node --env-file=.env src/cli.ts provision 'C:\Program Files\ZCode\resources\glm\zcode.cjs'
-```
+## Hubungkan ke OmniRoute
 
-`init` creates `.env` with independent random master and client API keys. Read `ZCODE_API_KEYS` from that private file to configure your client. Keep `.env` and `data/` out of Git. The server binds to `127.0.0.1:8080` by default.
+Di OmniRoute, tambahkan provider **OpenAI-compatible / Chat Completions**, lalu isi:
 
-Provisioning extracts only the supported prompt functions from your installed official client into `data/template.json`. It does not execute the installed application's entrypoint or modify ZCode. Vendor prompt text is **not distributed in this repository** and is not covered by this project's MIT license. The extractor fails when its expected bundle structure is absent; do not force it against another release without verification.
+| Kolom di OmniRoute | Isinya |
+|---|---|
+| Base URL | Alamat ZCode Gateway yang bisa dijangkau OmniRoute, diakhiri `/v1`. |
+| API Key | Satu nilai dari `ZCODE_API_KEYS` di `.env` tempat ZCode Gateway itu berjalan. |
+| Model | `glm-5.3-flash` dan `glm-5.3`, sesuai model yang tersedia pada akun. |
 
-The private template also records the provisioning machine's platform, shell, locale, timezone and working directory. Both upstream headers and environment context preserve those original values when the gateway moves to a VPS. This keeps the request consistent with the desktop profile being delegated; it does not grant the gateway access to that desktop's files or tools. Treat this metadata as private and regenerate the template when intentionally moving to a different client profile.
+Setelah disimpan, impor model dari `/v1/models`.
 
-OAuth login prints a one-time authorization link. Open it in your browser, choose the account and authorize. Polling completes in the CLI without a localhost callback. To add a second account, run login again and select a different account in the browser. Reauthorizing the same identity updates its credentials instead of duplicating it. The CLI supports `zai` and `bigmodel` authorization; live verification in the initial release uses Z.ai.
+Alamat yang dipakai bergantung pada tempat Anda menjalankannya:
 
-Login also opens your default browser automatically and prints a short clickable link in terminals that support OSC 8 hyperlinks. The full URL remains available for manual copying. Terminal link behavior varies; in Git Bash, Ctrl+click may be required. Use `login zai "Account one" --no-browser` over SSH or when you prefer to open the URL yourself. If browser launch fails, the CLI continues waiting for manual authorization.
+| Tempat menjalankan | Contoh Base URL |
+|---|---|
+| Keduanya berjalan langsung di komputer yang sama | `http://127.0.0.1:8080/v1` |
+| Keduanya berada di jaringan Docker yang sama | `http://zcode-gateway:8080/v1` |
+| Berbeda komputer atau server | Alamat server ZCode Gateway yang bisa diakses OmniRoute. |
 
-If you already signed in using the local ZCode desktop application:
+`127.0.0.1` menunjuk ke tempat aplikasi itu sendiri berjalan. Jika OmniRoute ada di VPS dan ZCode Gateway ada di laptop, `127.0.0.1` pada VPS tidak mengarah ke laptop. Jika OmniRoute memakai Docker, pilih alamat yang bisa dijangkau dari container tersebut.
 
-```sh
-node --env-file=.env src/cli.ts import-desktop "Desktop account"
-```
+**Jika ZCode Gateway berjalan di VPS, ambil `ZCODE_API_KEYS` dari `.env` di VPS itu.** Nilainya bisa berbeda dari `.env` laptop.
 
-This imports only your current user's existing login into the encrypted vault. It does not export tokens to the console or alter your desktop profile.
+Jika prefix provider di OmniRoute adalah `zcg`, aplikasi yang mengakses melalui OmniRoute memakai model `zcg/glm-5.3-flash` atau `zcg/glm-5.3`. Aplikasi tersebut memakai API key yang dibuat di OmniRoute. Nilai `ZCODE_API_KEYS` dipakai pada koneksi dari OmniRoute ke ZCode Gateway.
 
-## Multiple accounts
+Kuota juga bisa ditampilkan di OmniRoute. Contoh pengaturannya ada di [panduan kuota OmniRoute](README.en.md#choose-a-package-or-subscription). Total kuota berasal dari akun aktif. Tanggal berakhir kuota mengikuti paket ZCode; jangan menganggapnya sebagai waktu reset harian.
 
-Stop the gateway before running commands that mutate its vault:
+## Tambah akun dan cek kuota
 
-```sh
-node --env-file=.env src/cli.ts login zai "Account two"
-node --env-file=.env src/cli.ts accounts
-node --env-file=.env src/cli.ts quota
-node --env-file=.env src/cli.ts disable ACCOUNT_ID
-node --env-file=.env src/cli.ts enable ACCOUNT_ID
-node --env-file=.env src/cli.ts remove ACCOUNT_ID
-```
-
-Selection rotates among enabled, model-entitled accounts, with one in-flight request per account. Quota, authentication and transient failures may try another account before any response content is sent. Risk-control rejection code 3012 pauses that account locally for 15 minutes and returns the error without trying to bypass its block. This delay is local policy, not an upstream reset guarantee. Streams are never replayed after output begins. Account credentials that fail authorization require a new login; the gateway does not pretend an undocumented refresh endpoint exists.
-
-`quota` reads reported plan and balance data. Unknown counters remain unknown. The scheduler uses entitlements and provider errors, rather than guessing token balances from missing fields. Promotions are not automatically claimed.
-
-The vault is AES-256-GCM encrypted with a separate master key. One process owns a vault at a time. Stop the service before administration, and back up both encrypted data and the master key securely. After an unclean process exit, verify that its PID is no longer running before removing a stale `data/vault.lock`.
-
-If `accounts`, `login` and `import-desktop` all fail with `Cannot decrypt account vault` (older releases printed `Unsupported state or unable to authenticate data`), the error occurs while opening the gateway vault, before OAuth or desktop import. Restore the original `ZCODE_MASTER_KEY` associated with that `data/accounts.enc`. Keep the current `.env` and encrypted vault as a private backup first. The same error can also indicate a damaged vault, so verify a known matching key before concluding that the file is corrupt.
-
-Do not delete `accounts.enc` or rerun `init` with existing data to recover accounts: a newly generated key cannot unlock the previous vault. `init` refuses to generate keys when an existing vault is present. Keep each deployment's `.env` and data directory paired. When copying a vault between machines, its original master key must accompany it securely; client API keys can be different.
-
-Node's `--env-file=.env` preserves variables already set in the shell, and `ZCODE_MASTER_KEY_FILE` takes priority over `ZCODE_MASTER_KEY`. Check for stale overrides if the correct `.env` still fails. Never paste master keys, client keys, or account tokens into an issue or terminal transcript.
-
-## Choose a package or subscription
-
-Every account defaults to `start-plan`. Active packages, model entitlements, expiry and reported token buckets are discovered from the account. New packages on the same route appear on the next quota refresh. The upstream decides which promotional bucket is charged; the gateway cannot force an arbitrary bucket ID.
+Hentikan `serve` dengan **Ctrl+C** sebelum mengelola akun. Jalankan login lagi dan pilih akun berbeda:
 
 ```sh
-node --env-file=.env src/cli.ts plans
+node --env-file=.env src/cli.ts login zai "Akun kedua"
+```
+
+Anda juga bisa mengganti akun di aplikasi ZCode, lalu menjalankan `import-desktop` lagi. Jika akun itu sudah tersimpan, datanya diperbarui tanpa menambah duplikat.
+
+| Keperluan | Perintah |
+|---|---|
+| Lihat akun dan ID-nya | `node --env-file=.env src/cli.ts accounts` |
+| Perbarui sisa kuota | `node --env-file=.env src/cli.ts quota` |
+| Lihat paket | `node --env-file=.env src/cli.ts plans` |
+| Nonaktifkan akun | `node --env-file=.env src/cli.ts disable ACCOUNT_ID` |
+| Aktifkan lagi | `node --env-file=.env src/cli.ts enable ACCOUNT_ID` |
+| Hapus akun dari ZCode Gateway | `node --env-file=.env src/cli.ts remove ACCOUNT_ID` |
+
+Ganti `ACCOUNT_ID` dengan ID dari perintah `accounts`. Menghapus akun di sini tidak mengeluarkan akun dari aplikasi ZCode. Setelah selesai, jalankan `serve` lagi.
+
+Request dibagi bergiliran ke akun aktif yang mendukung model tersebut. Setiap akun menangani satu request pada satu waktu. Jika satu akun gagal sebelum jawaban mulai dikirim, ZCode Gateway dapat mencoba akun lain.
+
+## Ganti paket yang dipakai
+
+Setiap akun awalnya memakai `start-plan`. Paket, model, dan sisa kuota mengikuti informasi dari akun ZCode Anda. Paket baru pada layanan yang sama akan terbaca saat kuota diperbarui.
+
+Untuk memakai Start Plan:
+
+```sh
 node --env-file=.env src/cli.ts plan ACCOUNT_ID start-plan
-node --env-file=.env src/cli.ts plan ACCOUNT_ID coding-plan --key-file /private/subscription-key --models glm-5.3,glm-5.3-flash
 ```
 
-The subscription key is read from a private file and encrypted inside the vault. Switching routes changes only that account. Reauthorizing an existing identity preserves its chosen route. Coding Plan uses its own subscription Anthropic endpoint and key, independently of Start Plan JWT expiry. This optional route has fixture coverage; a paid account is required for live validation. Unknown subscription counters remain unknown. Switching back to `start-plan` restores discovery from the promotional route. See the [provider's subscription configuration](https://docs.z.ai/devpack/tool/claude).
-
-Billing reads require the original `X-Device-Mid`. Provisioning records it privately from the desktop telemetry file when available. Login and import retain it with the account. A missing device ID can make quota unavailable. Quota expiry timestamps denote the end of a grant, not a promise of daily reset.
-
-OmniRoute custom providers can display counters in **Provider Quotas** using the connection's `providerSpecificData.quotaEndpoint`:
-
-```json
-{
-  "url": "http://zcode-gateway:8080/api/usage",
-  "auth": "bearer",
-  "plan": "plan",
-  "quotas": {
-    "glm-5.3-flash": {
-      "total": "quotaBuckets.glm_5_3_flash.total",
-      "used": "quotaBuckets.glm_5_3_flash.used",
-      "remaining": "quotaBuckets.glm_5_3_flash.remaining",
-      "resetAt": "quotaBuckets.glm_5_3_flash.resetAt",
-      "displayName": "GLM-5.3-FLASH tokens (grant expiry)"
-    },
-    "glm-5.3": {
-      "total": "quotaBuckets.glm_5_3.total",
-      "used": "quotaBuckets.glm_5_3.used",
-      "remaining": "quotaBuckets.glm_5_3.remaining",
-      "resetAt": "quotaBuckets.glm_5_3.resetAt",
-      "displayName": "GLM-5.3 tokens (grant expiry)"
-    }
-  }
-}
-```
-
-`quotaBuckets` has dot-free field names because OmniRoute splits mapping paths at dots. `quotas` retains the model IDs. The connection uses its existing gateway client key; no upstream login is exposed to OmniRoute. It shows totals across enabled accounts. `/api/usage` also exposes per-account counters and quota errors. Add mappings for new model buckets when other packages expose them.
-
-## Connect clients
-
-Use your private gateway client key in these examples:
+Jika punya langganan Coding Plan, simpan API key langganan itu dalam file pribadi, lalu jalankan:
 
 ```sh
-curl http://127.0.0.1:8080/v1/chat/completions \
-  -H "Authorization: Bearer $GATEWAY_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"glm-5.3-flash","messages":[{"role":"user","content":"Hello"}],"stream":true}'
+node --env-file=.env src/cli.ts plan ACCOUNT_ID coding-plan --key-file "/lokasi/file-api-key-langganan" --models glm-5.3,glm-5.3-flash
 ```
 
-For Claude Code and Anthropic-compatible clients:
+Ganti lokasi file dan daftar model sesuai langganan Anda. API key Coding Plan berasal dari langganan Z.ai. `ZCODE_API_KEYS` tetap dipakai untuk aplikasi yang terhubung ke ZCode Gateway.
+
+Perubahan berlaku untuk akun yang dipilih saja. Coding Plan sudah diuji dengan data tiruan; pemakaian akun berbayar sungguhan belum diverifikasi. Lihat [pengaturan langganan dari Z.ai](https://docs.z.ai/devpack/tool/claude).
+
+## Hubungkan langsung ke aplikasi lain
+
+Untuk aplikasi yang mendukung API OpenAI, isi Base URL `http://127.0.0.1:8080/v1`, API Key dari `ZCODE_API_KEYS`, dan model `glm-5.3-flash` atau `glm-5.3`.
+
+Contoh uji lewat Bash / Git Bash. Ganti teks dalam tanda petik dengan satu nilai `ZCODE_API_KEYS` dari `.env`:
+
+```sh
+export ZCODE_API_KEYS='salin_satu_nilai_dari_env_anda'
+
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H "Authorization: Bearer $ZCODE_API_KEYS" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"glm-5.3-flash","messages":[{"role":"user","content":"Halo"}],"reasoning_effort":"low","stream":true}'
+```
+
+`export` mengisi nilai untuk terminal tersebut tanpa mengubah `.env`. Jika `ZCODE_API_KEYS` sudah diatur di terminal, nilai terminal itu juga akan dipakai saat menjalankan CLI.
+
+Untuk Claude Code atau aplikasi dengan API Anthropic, gunakan nilai yang sama di Bash / Git Bash:
 
 ```sh
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8080
-export ANTHROPIC_AUTH_TOKEN="$GATEWAY_KEY"
+export ANTHROPIC_AUTH_TOKEN="$ZCODE_API_KEYS"
 export ANTHROPIC_MODEL=glm-5.3-flash
 ```
 
-For an OpenAI Chat Completions client, use base URL `http://127.0.0.1:8080/v1`. For a Responses client, use the same base with the Responses wire protocol and model `glm-5.3-flash` or `glm-5.3`.
+## Model dan fitur
 
-In OmniRoute, create an **OpenAI-compatible / Chat Completions** provider with the bridge's reachable `/v1` base URL and its client key. Import models from `/v1/models`. A Claude-compatible caller may then use OmniRoute's existing protocol translation. Direct Anthropic access to this bridge is also supported. OmniRoute needs enabled detailed request logs and a client key with No-Log disabled to resolve `previous_response_id`. Send the initial Responses `input` as an array of messages; OmniRoute 3.8.52-web cannot resume string input. With logging disabled, send the complete history instead. Direct bridge continuation uses its own bounded in-memory store. The integration does not enable global prompt logging.
+| Fitur | GLM-5.3-Flash | GLM-5.3 |
+|---|---|---|
+| Percakapan teks | Ya | Ya |
+| Input gambar | Ya, dalam base64 | Tidak |
+| Jawaban muncul bertahap / streaming | Ya | Ya |
+| Pemanggilan tool | Ya | Ya |
+| Effort | `low`, `high`, `max` | `low`, `high`, `max` |
 
-## Docker
+Untuk effort, gunakan `reasoning_effort` pada Chat Completions, `reasoning.effort` pada Responses, atau `output_config.effort` pada Messages. `minimal` dipetakan ke `low`, `medium` ke `high`, dan `xhigh` ke `max`. Permintaan untuk mematikan thinking akan ditolak.
 
-Provision and log in on the host first. The container runs as UID 1000 and needs write access to `data/`. On Linux, set the directory ownership appropriately, then:
+ZCode Gateway mengirim permintaan tool ke aplikasi Anda. Aplikasi Anda yang menjalankan tool dan mengembalikan hasilnya. Web search dan code interpreter bawaan OpenAI belum disediakan. Memakai format API OpenAI atau Anthropic tetap menjalankan model GLM dari akun ZCode Anda.
+
+| Alamat API | Kegunaan |
+|---|---|
+| `POST /v1/chat/completions` | Format OpenAI Chat Completions |
+| `POST /v1/responses` | Format OpenAI Responses |
+| `POST /v1/messages` | Format Anthropic Messages |
+| `GET /v1/models` | Daftar model dan kemampuannya |
+| `GET /api/usage` | Sisa kuota; diperbarui paling sering tiap 60 detik |
+| `GET /api/plans` | Paket pada akun |
+| `GET /health` | Cek apakah layanan berjalan |
+
+Semua alamat tersebut memerlukan API key dari `ZCODE_API_KEYS`. Ketiga format percakapan mendukung jawaban biasa, streaming, dan pemanggilan tool.
+
+## Jika ada masalah
+
+### Error saat membuka data akun
+
+Pesannya bisa berupa `Cannot decrypt account vault` atau, pada versi lama:
+
+```text
+Unsupported state or unable to authenticate data
+```
+
+Artinya file akun tidak bisa dibuka dengan `ZCODE_MASTER_KEY` saat ini, atau file akunnya rusak. Error ini terjadi sebelum login ke ZCode.
+
+1. Hentikan ZCode Gateway dan buat salinan `.env` serta `data/accounts.enc`.
+2. Kembalikan `ZCODE_MASTER_KEY` asli yang dipakai saat file akun dibuat. Jika data dipindahkan dari VPS, gunakan nilai asli yang cocok dengan data itu.
+3. Coba baca akun lagi dengan `node --env-file=.env src/cli.ts accounts`.
+
+Jangan menghapus `data/accounts.enc` atau membuat `ZCODE_MASTER_KEY` baru untuk membuka akun lama. Kunci baru tidak bisa membuka data tersebut. Jika memakai `ZCODE_MASTER_KEY_FILE`, isinya yang dipakai. Nilai yang sudah diatur di terminal juga didahulukan daripada `.env`.
+
+### Data akun sedang dipakai
+
+Hentikan proses `serve` sebelum menjalankan perintah akun. Jika sebelumnya proses berhenti mendadak, periksa apakah prosesnya masih berjalan. Hapus `data/vault.lock` hanya setelah memastikan proses tersebut sudah berhenti.
+
+### Login di VPS tidak membuka browser
+
+Jalankan dengan `--no-browser`, lalu buka URL yang muncul di browser laptop. Biarkan terminal VPS tetap menunggu:
+
+```sh
+node --env-file=.env src/cli.ts login zai "Akun pertama" --no-browser
+```
+
+### Kuota tidak terbaca atau muncul kode 3012
+
+Data kuota memerlukan `X-Device-Mid` dari aplikasi ZCode. `provision` mengambilnya jika tersedia. Jika data ini tidak ada atau ZCode gagal melaporkan kuota, saldonya dianggap belum diketahui, bukan nol.
+
+Kode `3012` berarti ZCode menolak request karena pemeriksaan akun. ZCode Gateway menjeda akun itu selama 15 menit dan mengembalikan error. Jeda ini tidak menjamin blokir sudah berakhir. Jika login ditolak, login ulang akun tersebut.
+
+### Responses tidak bisa melanjutkan percakapan
+
+Untuk `previous_response_id` melalui OmniRoute, aktifkan penyimpanan detail request dan matikan No-Log pada API key pemanggil. Pada OmniRoute 3.8.52-web, kirim `input` pertama sebagai array pesan. Jika tidak menyimpan log, kirim riwayat percakapan lengkap pada setiap request.
+
+Jika langsung memakai ZCode Gateway, riwayat disimpan di memori selama maksimal satu jam, terpisah per API key. Restart menghapusnya. Batasnya 100 catatan, masing-masing maksimal 512 KiB. Dengan `store:false`, kirim riwayat lengkap sendiri.
+
+## Menjalankan dengan Docker
+
+Selesaikan langkah `init`, `provision`, dan login terlebih dahulu. Lalu jalankan:
 
 ```sh
 docker compose up -d --build
 ```
 
-The example publishes only `127.0.0.1:8080`. For OmniRoute on a shared private Docker network, remove published ports and connect both containers to that network; use `http://zcode-gateway:8080/v1` as the provider base. Never publish an unauthenticated inference service.
+Container memakai UID 1000 dan perlu izin menulis ke folder `data`. Pada Linux, sesuaikan kepemilikan folder tersebut. Contoh Compose hanya membuka port di `127.0.0.1:8080`.
 
-Configuration:
+Jika OmniRoute memakai Docker, sambungkan keduanya ke jaringan Docker yang sama untuk memakai alamat `http://zcode-gateway:8080/v1`. Untuk akses lewat internet, siapkan HTTPS dan pastikan API key tetap diwajibkan.
 
-| Variable | Meaning |
+## Pengaturan tambahan
+
+| Nama | Isi dan kegunaan |
 |---|---|
-| `ZCODE_MASTER_KEY` | Required encryption secret, at least 32 characters |
-| `ZCODE_MASTER_KEY_FILE` | Alternative file containing the master key |
-| `ZCODE_API_KEYS` | Comma-separated allowed client API keys, each at least 24 characters |
-| `ZCODE_API_KEYS_FILE` | Alternative file containing client keys |
-| `ZCODE_DATA_DIR` | Private data directory; default `./data` |
-| `HOST`, `PORT` | Listen address and port |
+| `ZCODE_API_KEYS` | API key untuk aplikasi yang terhubung; pisahkan dengan koma jika lebih dari satu. Minimal 24 karakter per nilai. |
+| `ZCODE_API_KEYS_FILE` | Lokasi file berisi nilai `ZCODE_API_KEYS`, jika ingin menyimpannya dalam file terpisah. |
+| `ZCODE_MASTER_KEY` | Kunci untuk menyimpan dan membuka data akun. Minimal 32 karakter. |
+| `ZCODE_MASTER_KEY_FILE` | Lokasi file berisi nilai `ZCODE_MASTER_KEY`, jika ingin menyimpannya dalam file terpisah. |
+| `ZCODE_DATA_DIR` | Folder data akun. Default `./data`. |
+| `HOST`, `PORT` | Alamat dan port tempat layanan berjalan. |
 
-Use a reverse proxy with TLS if clients reach the gateway across an untrusted network. OAuth URLs are login-session data: share them only with the account owner. Logs never include upstream tokens, client keys or prompts.
+Jangan unggah `.env`, folder `data`, token login, atau tautan login ke tempat publik. File tersebut sudah dikecualikan dari Git. Jika pindah server, pertahankan pasangan data akun dan `ZCODE_MASTER_KEY` yang cocok.
 
-## Limits
+## Batasan dan pengujian
 
-- Required ZCode identity/context text adds input tokens and influences model behavior. Caller instructions are merged into the required stable context block, not sent as a fourth system block.
-- GLM-5.3 always reasons; requests that disable thinking return a clear error. Effort mapping is minimal/low to low, medium/high to high, xhigh/max to max. See the [provider thinking documentation](https://docs.z.ai/guides/capabilities/thinking).
-- Responses history is in memory, scoped by API key, expires after one hour and is limited to 100 records of at most 512 KiB each. Restarting the server clears it. With `store:false`, supply the full history yourself.
-- Images require PNG/JPEG/WebP/GIF base64 input. Remote image URLs and other modalities are rejected. Actual image availability depends on the selected model and entitlement.
-- Request body limit is 8 MiB and request deadline is 180 seconds. This is not a complete implementation of every OpenAI or Anthropic product feature.
-- The gateway is a single-process service; do not run replicas against one vault file. High availability requires a shared transactional account backend, which this release does not provide.
+- Gambar harus berupa base64 PNG/JPEG/WebP/GIF. URL gambar dari internet belum didukung.
+- Jaminan format JSON sesuai schema dan `strict` pada tools belum didukung.
+- Ukuran request maksimal 8 MiB, dengan batas waktu 180 detik.
+- Jalankan satu proses untuk satu folder data akun.
+- Konteks yang diwajibkan ZCode ikut dikirim, sehingga menambah token input dan memengaruhi jawaban model.
+- `data/template.json` berisi bagian dari aplikasi ZCode serta informasi komputer saat `provision` dijalankan. File ini dibuat secara lokal dan tidak dibagikan dalam repositori.
 
-## Verification
+Untuk memeriksa kode tanpa memakai akun ZCode:
 
 ```sh
 npm test
 npm run check
+```
+
+Untuk menguji request sungguhan:
+
+```sh
 node --env-file=.env scripts/smoke.mjs
 node --env-file=.env scripts/tools-smoke.mjs
 node --env-file=.env scripts/capabilities-smoke.mjs
 ```
 
-The live smoke scripts spend a small amount of upstream quota. They cover JSON and SSE on all three protocols, Responses continuation, tool results on all protocols, streamed function deltas, and Flash vision with low reasoning effort. The tools use fixed synthetic results and never call a weather service. The image test generates a red/blue PNG entirely in memory.
+Tiga perintah terakhir memakai kuota akun. Uji tool memakai hasil contoh; uji gambar membuat gambar merah/biru di memori. Pengaturan pengujian lebih lanjut ada di [panduan Inggris](README.en.md#verification); hasil dan batas verifikasi ada di [catatan pengujian](docs/verification.md).
 
-Set `TEST_BASE_URL`, `TEST_API_KEY` and `TEST_MODEL` to target another deployment. Set `TEST_STATELESS=1` for the tools test when using OmniRoute without stored request logs. Run sequentially with a single account. Tests using fake accounts establish scheduler behavior; live verification is recorded separately in [docs/verification.md](docs/verification.md).
+## Referensi dan lisensi
 
-## Research and provenance
+Kode proyek ini memakai lisensi [MIT](LICENSE). File pribadi yang diambil dari aplikasi ZCode tetap mengikuti hak pemiliknya.
 
-- [TriDefender/zcode-api](https://github.com/TriDefender/zcode-api), inspected at `00501ce0e26e0276b9e858e9149299a62d91c7e5`, helped identify the current request assembly and OAuth flow. This project does not vendor its implementation, dependencies or bundled prompt asset. That revision's license is CC-BY-NC-SA-4.0; older README references to MIT should not be used as its license authority.
-- [kyle123740/dsh-zcode-cli-proxy](https://github.com/kyle123740/dsh-zcode-cli-proxy) documents the app-server alternative. This gateway does not host an autonomous coding agent.
-- [OmniRoute discussion 9056](https://github.com/cheaper-inference/OmniRoute/discussions/9056) records earlier restrictions. Current behavior must be tested against the account and client release in use.
-
-Application code in this repository is MIT licensed. Private vendor-derived runtime templates and your credentials remain outside the repository.
+Penelitian awal merujuk [TriDefender/zcode-api](https://github.com/TriDefender/zcode-api) pada commit `00501ce0e26e0276b9e858e9149299a62d91c7e5`. Revisi tersebut memakai CC-BY-NC-SA-4.0; implementasi dan aset prompt-nya tidak disalin ke repositori ini. Referensi lain: [dsh-zcode-cli-proxy](https://github.com/kyle123740/dsh-zcode-cli-proxy) dan [diskusi OmniRoute 9056](https://github.com/cheaper-inference/OmniRoute/discussions/9056).
