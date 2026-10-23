@@ -2,6 +2,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import vm from 'node:vm';
 import os from 'node:os';
+import path from 'node:path';
+
+export function clientContext() {
+  return { platform:process.platform,arch:os.arch(),release:os.release(),cwd:process.cwd(),shell:process.platform==='win32'?'pwsh.exe':path.basename(process.env.SHELL || 'sh'),locale:Intl.DateTimeFormat().resolvedOptions().locale,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone };
+}
 
 // Only supported prompt-only functions are evaluated, in an empty VM. The
 // installed application entrypoint and its initialization code never execute.
@@ -34,7 +39,7 @@ export function extractTemplate(file: string) {
   vm.runInNewContext(code,context,{timeout:100});
   const result = context.result;
   if (!result?.prefix || result.stable.length < 1000 || result.before.length < 1000) throw new Error('Prompt extraction incomplete');
-  return { version: 1, appVersion: '3.16.3', sourceSha256: createHash('sha256').update(s).digest('hex'), ...result };
+  return { version: 1, appVersion: '3.16.3', sourceSha256: createHash('sha256').update(s).digest('hex'), context:clientContext(), ...result };
 }
 export function provision(source: string, destination: string) {
   const template = extractTemplate(source);
@@ -45,7 +50,8 @@ export function prepareRequest(request: any, template: any) {
   if (template.version !== 1 || !template.prefix || !template.stable) throw new Error('Missing or invalid private ZCode prompt template');
   const b = structuredClone(request);
   const caller = typeof b.system === 'string' ? b.system : '';
-  const env = ['# Environment','You have been invoked in the following environment:', '- Primary working directory: '+process.cwd(), '- Is a git repository: no','- Platform: '+process.platform, '- Shell: '+(process.platform === 'win32' ? 'pwsh.exe' : 'sh'), '- OS Version: '+process.platform+' '+os.release()+' '+os.arch(), '- You are powered by the model named zai-api/'+b.model+'.'].join('\n');
+  const context=template.context || clientContext();
+  const env = ['# Environment','You have been invoked in the following environment:', '- Primary working directory: '+context.cwd, '- Is a git repository: no','- Platform: '+context.platform, '- Shell: '+context.shell, '- OS Version: '+context.platform+' '+context.release+' '+context.arch, '- You are powered by the model named zai-api/'+b.model+'.'].join('\n');
   b.system = [
     { type:'text', text:template.prefix },
     { type:'text', text:template.stable+(caller?'\n\n# Application Instructions\n'+caller:''), cache_control:{type:'ephemeral'} },

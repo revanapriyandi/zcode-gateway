@@ -4,8 +4,9 @@ import { prepareRequest } from './templates.ts';
 import { Pool } from './accounts.ts';
 
 const base = 'https://zcode.z.ai';
-export function headers(token: string, version = '3.16.3'): Record<string,string> {
-  return { Authorization:'Bearer '+token,'Content-Type':'application/json','anthropic-version':'2023-06-01','HTTP-Referer':base,'User-Agent':'ZCode/'+version,'X-ZCode-App-Version':version,'X-Title':'Z Code@electron','X-Release-Channel':'production','X-Client-Language':Intl.DateTimeFormat().resolvedOptions().locale,'X-Client-Timezone':Intl.DateTimeFormat().resolvedOptions().timeZone,'X-ZCode-Agent':'glm','X-Platform':process.platform+'-'+os.arch(),'X-Os-Category':process.platform==='win32'?'windows':process.platform==='darwin'?'macos':'linux','X-Os-Version':os.release() };
+export function headers(token: string, version = '3.16.3', context: any = {}): Record<string,string> {
+  const platform=context.platform || process.platform;
+  return { Authorization:'Bearer '+token,'Content-Type':'application/json','anthropic-version':'2023-06-01','HTTP-Referer':base,'User-Agent':'ZCode/'+version,'X-ZCode-App-Version':version,'X-Title':'Z Code@electron','X-Release-Channel':'production','X-Client-Language':context.locale || Intl.DateTimeFormat().resolvedOptions().locale,'X-Client-Timezone':context.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,'X-ZCode-Agent':'glm','X-Platform':platform+'-'+(context.arch || os.arch()),'X-Os-Category':platform==='win32'?'windows':platform==='darwin'?'macos':'linux','X-Os-Version':context.release || os.release() };
 }
 export async function refreshAccount(account: any, fetcher: any = fetch) {
   const options = {headers:headers(account.token),redirect:'error',signal:AbortSignal.timeout(30000)};
@@ -32,7 +33,7 @@ export function createUpstream(vault: any, template: any, options: any = {}) {
       try{
         const body=prepareRequest(request,template);body.stream=stream;
         body.metadata={user_id:JSON.stringify({device_id:a.deviceId || a.id,account_uuid:'',session_id:randomUUID()})};
-        const response=await fetcher(base+'/api/v1/zcode-plan/anthropic/v1/messages',{method:'POST',headers:headers(a.token,template.appVersion),body:JSON.stringify(body),redirect:'error',signal});
+        const response=await fetcher(base+'/api/v1/zcode-plan/anthropic/v1/messages',{method:'POST',headers:headers(a.token,template.appVersion,template.context),body:JSON.stringify(body),redirect:'error',signal});
         if(!response.ok){
           const raw=await response.text();let e;try{e=JSON.parse(raw)}catch{}
           const status=response.status;
