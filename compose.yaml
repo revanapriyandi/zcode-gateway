@@ -1,0 +1,11 @@
+services:
+  zcode-gateway:
+    build: .
+    restart: unless-stopped
+    environment:
+      ZCODE_MASTER_KEY: ${ZCODE_MASTER_KEY:?set master key}
+      ZCODE_API_KEYS: ${ZCODE_API_KEYS:?set client keys}
+    volumes:
+      - ./data:/data
+    ports:
+      - 127.0.0.1:8080:8080
