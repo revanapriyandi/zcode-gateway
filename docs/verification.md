@@ -4,8 +4,8 @@ Date: 2026-10-24.
 
 ## Automated checks
 
-- Twenty local tests passed, including account encryption and tamper rejection, account rotation and cooldown, lease lifetime, OAuth pending/ready/expiry handling, tool identity preservation, client-key history isolation and streamed output.
-- A clean clone of the public repository passed the same twenty tests.
+- Twenty-one local tests passed, including account encryption and tamper rejection, account rotation and cooldown, lease lifetime, OAuth pending/ready/expiry handling, tool identity preservation, client-key history isolation and streamed output.
+- A clean clone of the public repository passed the same twenty-one tests.
 - Node syntax checks passed and the production Docker image built successfully.
 
 ## Live checks
@@ -31,8 +31,14 @@ No account credential, master key, private vendor prompt template or environment
 
 ## Compatibility boundaries
 
-OmniRoute 3.8.52-web resolves previous_response_id through its request-log storage. That storage was disabled, so the public OmniRoute test returned previous_response_not_found. A full-history Responses tool continuation passed. Global logging was not enabled by this integration. Direct bridge previous_response_id continuation passed.
+Initially, OmniRoute request detail storage was disabled, so public previous_response_id returned previous_response_not_found. After the owner explicitly requested logging, detailed storage and management-key logging were enabled; array-input continuation passed. Individual customer No-Log preferences remain unchanged. See follow-up verification below.
 
 Start Plan is the default account route. Package discovery and dot-free quota mapping have automated coverage. The optional Coding Plan subscription route uses a separate credential and endpoint; its billing balance remains unknown and a live paid-subscription request is not claimed.
 
 The independent reviewer could not start because the configured inherited agent model was unavailable. Manual source review and automated/live checks were completed; this is not represented as an independent review.
+
+## Follow-up verification
+
+Owner-requested detailed request logging was enabled in OmniRoute along with logging for the management test key; customer keys retain their individual No-Log preferences. Responses previous_response_id with function tools passed through public OmniRoute when the initial input was an array of messages. The earlier string-input test cannot be resumed by OmniRoute 3.8.52-web because its history reader requires an array.
+
+Low, high and max effort requests all succeeded. The persisted OmniRoute pipeline recorded the same reasoning_effort value in clientRawRequest.body and providerRequest.body for each level. This establishes parameter forwarding, not a quantified change in model quality or internal compute. Discovery metadata was configured to advertise the three supported effort levels.

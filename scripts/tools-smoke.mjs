@@ -4,7 +4,7 @@ const key=process.env.TEST_API_KEY || process.env.ZCODE_API_KEYS?.split(',')[0];
 const model=process.env.TEST_MODEL || 'glm-5.3-flash';
 const headers={Authorization:'Bearer '+key,'Content-Type':'application/json'};
 const call=async(path,body)=>{
- const r=await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...body,max_tokens:2048}),signal:AbortSignal.timeout(180000)});
+ const r=await fetch(base+path,{method:'POST',headers,body:JSON.stringify({stream:false,...body,max_tokens:2048}),signal:AbortSignal.timeout(180000)});
  if(!r.ok)throw new Error(path+' HTTP '+r.status+' '+await r.text());return r;
 };
 const schema={type:'object',properties:{city:{type:'string'}},required:['city']};
@@ -23,7 +23,7 @@ const checks=[];
 }
 {
  const tools=[{type:'function',name:'get_test_weather',description:'Synthetic weather test.',parameters:schema}];
- const first=await(await call('/v1/responses',{model,instructions:'Use tools as requested.',input:prompt,tools})).json();
+ const first=await(await call('/v1/responses',{model,instructions:'Use tools as requested.',input:[{role:'user',content:prompt}],tools})).json();
  const calls=first.output.filter(p=>p.type==='function_call');assert.ok(calls.length);
  const last=await(await call('/v1/responses',{model,...(process.env.TEST_STATELESS==='1'?{input:[{role:'user',content:prompt},...first.output.filter(p=>p.type==='message'||p.type==='function_call'),...calls.map(c=>({type:'function_call_output',call_id:c.call_id,output:fake}))]}:{previous_response_id:first.id,input:calls.map(c=>({type:'function_call_output',call_id:c.call_id,output:fake}))}),tools})).json();
  assert.match(last.output_text,/ZCODE_PROTOCOL_TOOL_913/);

@@ -52,3 +52,14 @@ test('SSE framing survives CRLF split across network chunks',async()=>{
  const stream=new ReadableStream({start(c){for(const text of data)c.enqueue(new TextEncoder().encode(text));c.close();}});
  const events=[];for await(const e of readEvents(stream))events.push(e);assert.deepEqual(events,[{type:'message_stop'}]);
 });
+
+test('discovery exposes machine-readable effort, modalities and protocol metadata',async()=>{
+ const server=createGateway({keys:['test-client-secret'],models:()=>['glm-5.3','glm-5.3-flash']});server.listen(0,'127.0.0.1');await once(server,'listening');
+ try{
+  const r=await fetch('http://127.0.0.1:'+server.address().port+'/v1/models',{headers:{Authorization:'Bearer test-client-secret'}});
+  const {data}=await r.json();assert.equal(r.status,200);
+  const text=data.find(m=>m.id==='glm-5.3'),vision=data.find(m=>m.id==='glm-5.3-flash');
+  assert.deepEqual(text.capabilities.effort_tiers,['low','high','max']);assert.deepEqual(text.supported_endpoints,['chat','responses','messages']);
+  assert.equal(text.context_length,1000000);assert.equal(text.max_output_tokens,128000);assert.deepEqual(text.input_modalities,['text']);assert.ok(vision.input_modalities.includes('image'));assert.equal(vision.capabilities.streaming,true);
+ }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});

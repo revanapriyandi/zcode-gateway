@@ -137,7 +137,7 @@ export ANTHROPIC_MODEL=glm-5.3-flash
 
 For an OpenAI Chat Completions client, use base URL `http://127.0.0.1:8080/v1`. For a Responses client, use the same base with the Responses wire protocol and model `glm-5.3-flash` or `glm-5.3`.
 
-In OmniRoute, create an **OpenAI-compatible / Chat Completions** provider with the bridge's reachable `/v1` base URL and its client key. Import models from `/v1/models`. A Claude-compatible caller may then use OmniRoute's existing protocol translation. Direct Anthropic access to this bridge is also supported. OmniRoute may require its request-log storage to resolve `previous_response_id`; when that storage is disabled, send the complete Responses history instead. Direct bridge continuation uses its own bounded in-memory store. The integration does not enable global prompt logging.
+In OmniRoute, create an **OpenAI-compatible / Chat Completions** provider with the bridge's reachable `/v1` base URL and its client key. Import models from `/v1/models`. A Claude-compatible caller may then use OmniRoute's existing protocol translation. Direct Anthropic access to this bridge is also supported. OmniRoute needs enabled detailed request logs and a client key with No-Log disabled to resolve `previous_response_id`. Send the initial Responses `input` as an array of messages; OmniRoute 3.8.52-web cannot resume string input. With logging disabled, send the complete history instead. Direct bridge continuation uses its own bounded in-memory store. The integration does not enable global prompt logging.
 
 ## Docker
 

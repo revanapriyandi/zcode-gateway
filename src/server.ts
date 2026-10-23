@@ -23,7 +23,7 @@ export function createGateway(options: any) {
         const summary=await options.quota();res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(summary));return;
       }
       if(req.method==='GET'&&url.pathname==='/v1/models'){
-        res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({object:'list',data:options.models().map(id=>({id,object:'model',created:0,owned_by:'zcode',...(id==='glm-5.3'||id==='glm-5.3-flash'?{context_window:1000000,max_output_tokens:128000,capabilities:{input:['text',...(id.endsWith('-flash')?['image']:[])],output:['text'],reasoning:true,tools:true,streaming:true}}:{})}))}));return;
+        res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({object:'list',data:options.models().map(id=>({id,object:'model',created:0,owned_by:'zcode',...(id==='glm-5.3'||id==='glm-5.3-flash'?{context_window:1000000,context_length:1000000,max_output_tokens:128000,api_format:'anthropic-messages',supported_endpoints:['chat','responses','messages'],input_modalities:['text',...(id.endsWith('-flash')?['image']:[])],output_modalities:['text'],capabilities:{vision:id.endsWith('-flash'),tool_calling:true,effort_tiers:['low','high','max'],input:['text',...(id.endsWith('-flash')?['image']:[])],output:['text'],reasoning:true,tools:true,streaming:true}}:{})}))}));return;
       }
       const routes={'/v1/messages':'messages','/v1/chat/completions':'chat','/v1/responses':'responses'};
       format=routes[url.pathname];

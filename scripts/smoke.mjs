@@ -6,6 +6,7 @@ const headers={Authorization:'Bearer '+key,'Content-Type':'application/json'};
 const model=process.env.TEST_MODEL || 'glm-5.3-flash';
 const call=async(path,body)=>{
  body.max_tokens ??= 2048;
+ body.stream ??= false;
  const r=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body),signal:AbortSignal.timeout(180000)});
  if(!r.ok)throw new Error(path+' HTTP '+r.status+' '+await r.text());return r;
 };
@@ -13,7 +14,7 @@ const rows=[];
 const passed=(test)=>{rows.push({test,passed:true});console.error('PASS '+test);};
 for(const format of ['chat','messages','responses']){
  const path=format==='chat'?'/v1/chat/completions':format==='messages'?'/v1/messages':'/v1/responses';
- const request=format==='responses'?{model,instructions:'Answer exactly as requested.',input:'Hitung 17 kali 23. Jawab HASIL=391.'}:format==='chat'?{model,messages:[{role:'system',content:'Answer exactly as requested.'},{role:'user',content:'Hitung 17 kali 23. Jawab HASIL=391.'}]}:{model,system:'Answer exactly as requested.',messages:[{role:'user',content:'Hitung 17 kali 23. Jawab HASIL=391.'}]};
+ const request=format==='responses'?{model,instructions:'Answer exactly as requested.',input:[{role:'user',content:'Hitung 17 kali 23. Jawab HASIL=391.'}]}:format==='chat'?{model,messages:[{role:'system',content:'Answer exactly as requested.'},{role:'user',content:'Hitung 17 kali 23. Jawab HASIL=391.'}]}:{model,system:'Answer exactly as requested.',messages:[{role:'user',content:'Hitung 17 kali 23. Jawab HASIL=391.'}]};
  const r=await (await call(path,request)).json();
  const answer=format==='chat'?r.choices[0].message.content:format==='messages'?r.content.filter(p=>p.type==='text').map(p=>p.text).join(''):r.output_text;
  assert.match(answer,/391/);passed(format+' JSON');
@@ -21,7 +22,7 @@ for(const format of ['chat','messages','responses']){
  assert.match(stream,format==='chat'?/\[DONE\]/:format==='messages'?/message_stop/:/response.completed/);
  passed(format+' SSE');
  if(format==='responses'){
-  const follow=await(await call(path,{model,previous_response_id:r.id,input:'Apa angka hasil perhitungan sebelumnya? Jawab angkanya saja.'})).json();assert.match(follow.output_text,/391/);passed('Responses previous_response_id');
+  const follow=await(await call(path,{model,previous_response_id:r.id,input:[{role:'user',content:'Apa angka hasil perhitungan sebelumnya? Jawab angkanya saja.'}]})).json();assert.match(follow.output_text,/391/);passed('Responses previous_response_id');
  }
 }
 const tool={type:'function',function:{name:'get_test_weather',description:'Read synthetic test weather.',parameters:{type:'object',properties:{city:{type:'string'}},required:['city']}}};
