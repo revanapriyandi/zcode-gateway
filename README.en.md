@@ -74,7 +74,17 @@ node --env-file=.env src/cli.ts remove ACCOUNT_ID
 
 Selection rotates among enabled, model-entitled accounts, with one in-flight request per account. Quota, authentication and transient failures may try another account before any response content is sent. Risk-control rejection code 3012 pauses that account locally for 15 minutes and returns the error without trying to bypass its block. This delay is local policy, not an upstream reset guarantee. Streams are never replayed after output begins. Account credentials that fail authorization require a new login; the gateway does not pretend an undocumented refresh endpoint exists.
 
-`quota` reads reported plan and balance data. Unknown counters remain unknown. The scheduler uses entitlements and provider errors, rather than guessing token balances from missing fields. Promotions are not automatically claimed.
+`quota` reads reported plan and balance data. Unknown counters remain unknown. The scheduler uses entitlements and provider errors, rather than guessing token balances from missing fields. Automatic claims are opt-in; see below.
+
+## Automatic free-plan claims
+
+Set `ZCODE_AUTO_CLAIM=true` in `.env` and restart the service. `ZCODE_AUTO_CLAIM_INTERVAL_MS` defaults to `300000` (five minutes), with a one-minute minimum. Docker Compose forwards both settings; recreate the service after changing them.
+
+The worker refreshes entitlements and checks provider previews at startup and periodically without inbound HTTP traffic. It considers unexpired model grants without payment fields, skips subscription accounts and accounts requiring login, and never purchases a paid plan. Successful claims and retry holds are persisted in the encrypted vault. Claims already held for the same period are skipped; a later period can reuse the same plan ID. Future activation does not prevent claiming, but model discovery waits for entitlement activation.
+
+Authenticated `/api/usage` and `/api/plans` expose per-account `autoClaim` status. An empty preview produces `idle`. Required or unknown CAPTCHA verification requires manual action, as does reauthorization. Availability and eligibility remain provider-controlled; a `one_time` grant does not promise daily refills.
+
+Model discovery refreshes before publishing the catalog or rejecting a missing model. During account cooldown, rate-limit failures retain their upstream status and safe error reason with `Retry-After` instead of becoming a generic no-account error.
 
 The vault is AES-256-GCM encrypted with a separate master key. One process owns a vault at a time. Stop the service before administration, and back up both encrypted data and the master key securely. After an unclean process exit, verify that its PID is no longer running before removing a stale `data/vault.lock`.
 

@@ -8,6 +8,7 @@ import { provision } from './templates.ts';
 import { createUpstream, refreshAccount, createQuotaReader } from './upstream.ts';
 import { quotaSummary, planSelection } from './plans.ts';
 import { createGateway } from './server.ts';
+import { createAutoClaim } from './claims.ts';
 import { openLoginBrowser, loginLink } from './browser.ts';
 
 const args=process.argv.slice(2),command=args[0] || 'help';
@@ -29,6 +30,7 @@ async function main(){
   const lock=join(dir,'vault.lock');let fd;
   try{fd=openSync(lock,'wx',0o600);writeFileSync(fd,String(process.pid));}catch{throw new Error('Vault is in use. Stop its service before an account-management command. After a crash, verify its process is gone before removing data/vault.lock.');}
   const unlock=()=>{if(fd!==undefined){closeSync(fd);fd=undefined;unlinkSync(lock);}};
+  let maintenance:ReturnType<typeof createAutoClaim>|undefined;
   try{
     if(command==='provision'){
       if(!args[1])throw new Error('Provide an installed official zcode.cjs path');
@@ -93,14 +95,16 @@ async function main(){
     v.save();
     const keys=envSecret('ZCODE_API_KEYS').split(',').map(x=>x.trim()).filter(Boolean);
     if(keys.some(k=>k.length<24))throw new Error('Every API key must contain at least 24 characters');
-    const server=createGateway({keys,models:()=>[...new Set(v.accounts.filter(a=>a.enabled&&!a.needsLogin).flatMap(a=>a.models))],generate:createUpstream(v,template),quota:createQuotaReader(v)});
+    const quota=createQuotaReader(v);
+    const autoClaim=maintenance=process.env.ZCODE_AUTO_CLAIM==='true'?createAutoClaim(v,template,quota,{intervalMs:Number(process.env.ZCODE_AUTO_CLAIM_INTERVAL_MS || 300000),log:event=>console.log(JSON.stringify(event))}):undefined;
+    const server=createGateway({keys,models:()=>[...new Set(v.accounts.filter(a=>a.enabled&&!a.needsLogin).flatMap(a=>a.models))],generate:createUpstream(v,template),quota});
     const host=process.env.HOST || '127.0.0.1',port=Number(process.env.PORT || 8080);
     server.listen(port,host,()=>console.log(JSON.stringify({event:'listening',host,port,accounts:v.accounts.length})));
+    autoClaim?.start();
     let stopping=false;
-    const stop=()=>{if(stopping)return;stopping=true;server.close(()=>{unlock();process.exit(0);});setTimeout(()=>{server.closeAllConnections();unlock();process.exit(0);},15000).unref();};
+    const stop=()=>{if(stopping)return;stopping=true;const settled=autoClaim?.stop();server.close(async()=>{await settled;unlock();process.exit(0);});setTimeout(()=>{server.closeAllConnections();unlock();process.exit(0);},15000).unref();};
     process.once('SIGINT',stop);process.once('SIGTERM',stop);
-    server.on('error',()=>{unlock();process.exitCode=1;});
-    await new Promise<void>(resolve=>server.once('close',resolve));
-  }finally{unlock();}
+    await new Promise<void>((resolve,reject)=>{server.once('close',resolve);server.once('error',reject);});
+  }finally{await maintenance?.stop();unlock();}
 }
 main().catch(error=>{console.error(error instanceof Error?error.message:'Command failed');process.exitCode=1;});

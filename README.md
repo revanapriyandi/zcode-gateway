@@ -129,6 +129,23 @@ Ganti `ACCOUNT_ID` dengan ID dari perintah `accounts`. Menghapus akun di sini ti
 
 Request dibagi bergiliran ke akun aktif yang mendukung model tersebut. Setiap akun menangani satu request pada satu waktu. Jika satu akun gagal sebelum jawaban mulai dikirim, ZCode Gateway dapat mencoba akun lain.
 
+## Klaim otomatis paket gratis
+
+Klaim otomatis dapat diaktifkan untuk akun Start Plan yang terhubung dengan menambahkan pengaturan berikut ke `.env`, lalu memulai ulang layanan:
+
+```dotenv
+ZCODE_AUTO_CLAIM=true
+ZCODE_AUTO_CLAIM_INTERVAL_MS=300000
+```
+
+Gateway memeriksa penawaran saat mulai dan setiap lima menit, tanpa menunggu request masuk. Interval minimum adalah satu menit. Untuk Docker Compose, jalankan ulang `docker compose up -d` setelah mengubah pengaturan.
+
+Hanya paket grant model yang ditawarkan endpoint preview, belum kedaluwarsa, dan tidak mencantumkan biaya yang diproses. Langganan berbayar tidak dibeli. Paket yang aktif pada periode yang sama serta klaim yang sudah berhasil tidak diulang; paket periode berikutnya tetap diperiksa meskipun ID-nya sama. Paket boleh diklaim sebelum waktu aktivasinya, tetapi model baru tersedia setelah entitlement aktif.
+
+Status per akun tersedia pada `autoClaim` di respons berautentikasi `/api/usage` atau `/api/plans`. Jika penawaran kosong, statusnya `idle`. CAPTCHA atau login ulang yang diwajibkan provider memerlukan tindakan manual. Fitur ini tidak menjamin ada penawaran setiap hari; paket berperiode `one_time` tidak menjanjikan isi ulang kuota harian.
+
+Daftar model juga disegarkan sebelum katalog ditampilkan dan sebelum model yang belum tercatat ditolak. Jika provider menolak request dengan rate limit, gateway mempertahankan penyebab penolakan serta header `Retry-After` selama masa jeda akun.
+
 ## Ganti paket yang dipakai
 
 Setiap akun awalnya memakai `start-plan`. Paket, model, dan sisa kuota mengikuti informasi dari akun ZCode Anda. Paket baru pada layanan yang sama akan terbaca saat kuota diperbarui.

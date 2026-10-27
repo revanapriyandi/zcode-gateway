@@ -52,21 +52,25 @@ export class Pool {
   accounts: any[];
   now: () => number;
   cursor = 0;
-  states = new Map<string, { active: number; until: number }>();
+  states = new Map<string, { active: number; until: number; reason?: {status:number;code?:any;message:string} }>();
   constructor(accounts: any[], now = Date.now) { this.accounts = accounts; this.now = now; }
   state(id: string) {
     if (!this.states.has(id)) this.states.set(id, { active: 0, until: 0 });
     return this.states.get(id)!;
   }
-  cooldown(id: string, ms: number) { this.state(id).until = this.now() + Math.max(0, ms); }
+  cooldown(id: string, ms: number, reason?: {status:number;code?:any;message:string}) { const s=this.state(id);s.until=this.now()+Math.max(0,ms);s.reason=reason; }
   acquire(model: string, excluded = new Set<string>()) {
+    let cooling: ReturnType<Pool['state']> | undefined;
     for (let n = 0; n < this.accounts.length; n++) {
       const i = (this.cursor + n) % this.accounts.length, a = this.accounts[i], s = this.state(a.id);
-      if (!a.enabled || a.needsLogin || !a.models.includes(model) || excluded.has(a.id) || s.active >= 1 || s.until > this.now()) continue;
+      if (!a.enabled || a.needsLogin || !a.models.includes(model) || excluded.has(a.id)) continue;
+      if(s.until>this.now()){if(!cooling||s.until<cooling.until)cooling=s;continue;}
+      if(s.active>=1)continue;
       s.active++; this.cursor = (i + 1) % this.accounts.length;
       let released = false;
       return { account: a, release: () => { if (!released) { released = true; s.active--; } } };
     }
+    if(cooling?.reason)throw Object.assign(new Error(cooling.reason.message),cooling.reason,{retryAfter:Math.max(1,Math.ceil((cooling.until-this.now())/1000))});
     throw Object.assign(new Error('No enabled account is currently available for this model'), { status: 503 });
   }
 }

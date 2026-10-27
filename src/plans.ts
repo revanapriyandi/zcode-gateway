@@ -30,7 +30,9 @@ export function quotaSummary(accounts: any[]) {
         }
       }
     }
-    publicAccounts.push({id:a.id,label:a.label,plan:a.plan || 'start-plan',selectedPlanId:a.selectedPlanId || null,plans,models:a.models,quotas:accountQuotas,quotaError:a.quota?.error || null,checkedAt:a.quota?.checkedAt || null,quotaKnown:buckets.length>0,needsLogin:!!a.needsLogin});
+    const claim=a.autoClaim;
+    const autoClaim=claim?{checkedAt:claim.checkedAt,nextCheckAt:claim.nextCheckAt,status:claim.status,offeredPlans:claim.offeredPlans,plans:(claim.plans || []).map(({planId,status,code,checkedAt,retryAt}:any)=>({planId,status,code,checkedAt,retryAt}))}:null;
+    publicAccounts.push({id:a.id,label:a.label,plan:a.plan || 'start-plan',selectedPlanId:a.selectedPlanId || null,plans,models:a.models,quotas:accountQuotas,quotaError:a.quota?.error || null,checkedAt:a.quota?.checkedAt || null,quotaKnown:buckets.length>0,needsLogin:!!a.needsLogin,autoClaim});
   }
   const quotaBuckets=Object.fromEntries(Object.entries(quotas).map(([model,bucket])=>[model.replace(/[^a-z0-9]/g,'_'),bucket]));
   return {plan:[...names].join(', ') || 'ZCode Start Plan',quotas,quotaBuckets,accounts:publicAccounts,generatedAt:new Date().toISOString(),message:Object.keys(quotas).length?null:'No provider-reported quota counters are available'};

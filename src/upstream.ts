@@ -16,7 +16,7 @@ export async function refreshAccount(account: any, fetcher: any = fetch) {
   const data=await response.json();
   if(!response.ok || data.code!==0) throw new Error('Unable to read account plan: '+response.status);
   const models=new Set<string>();
-  for(const plan of data.data?.plans || []) if(plan.status==='active' && (!plan.ends_at || plan.ends_at*1000>Date.now())&&(!account.selectedPlanId||plan.plan_id===account.selectedPlanId)) for(const entitlement of plan.entitlements || []) for(const capability of entitlement.capabilities || []) if(capability.startsWith('model:')) models.add(capability.slice(6).toLowerCase());
+  for(const plan of data.data?.plans || []) if(plan.status==='active' && (!plan.starts_at || plan.starts_at*1000<=Date.now()) && (!plan.ends_at || plan.ends_at*1000>Date.now())&&(!account.selectedPlanId||plan.plan_id===account.selectedPlanId)) for(const entitlement of plan.entitlements || []) if(!entitlement.effective_at || entitlement.effective_at*1000<=Date.now()) for(const capability of entitlement.capabilities || []) if(capability.startsWith('model:')) models.add(capability.slice(6).toLowerCase());
   const updated={...account,models:[...models],plans:data.data?.plans || [],plan:account.plan || 'start-plan'};
   try{
     const balance=await fetcher(base+'/api/v1/zcode-plan/billing/balance?app_version=3.16.3',options);
@@ -24,13 +24,14 @@ export async function refreshAccount(account: any, fetcher: any = fetch) {
   }catch{updated.quota={checkedAt:Date.now(),reported:null};}
   return updated;
 }
-export function createQuotaReader(vault: any) {
+export function createQuotaReader(vault: any, options: any = {}) {
   let expires=0,pending: Promise<any> | undefined;
-  return async()=>{
-    if(Date.now()<expires)return quotaSummary(vault.accounts);
+  return async({force=false}:any={})=>{
+    if(force&&pending)await pending;
+    if(!force&&Date.now()<expires)return quotaSummary(vault.accounts);
     if(!pending)pending=(async()=>{
       for(const a of vault.accounts.filter(x=>x.enabled)){
-        try{Object.assign(a,await refreshAccount(a));}catch{a.quota={checkedAt:Date.now(),reported:null,error:'Quota refresh failed'};}
+        try{Object.assign(a,await refreshAccount(a,options.fetcher || fetch));}catch{a.quota={checkedAt:Date.now(),reported:null,error:'Quota refresh failed'};}
       }
       vault.save();expires=Date.now()+60000;return quotaSummary(vault.accounts);
     })().finally(()=>{pending=undefined;});
@@ -57,9 +58,11 @@ export function createUpstream(vault: any, template: any, options: any = {}) {
           const status=response.status;
           const code=e?.code || e?.error?.code;
           if([401,403].includes(status)){a.needsLogin=true;vault.save();}
-          if(status===429 || status>=500 || code===3012) pool.cooldown(a.id,code===3012?900000:Math.min(300000,Math.max(1000,Number(response.headers.get('retry-after') || 30)*1000)));
-          if(status===402)pool.cooldown(a.id,300000);
           lastError=Object.assign(new Error('ZCode upstream rejected request'+(code?' (code '+code+')':'')),{status:status>=500?502:status,code});
+          let cooldownMs=0;
+          if(status===429 || status>=500 || code===3012)cooldownMs=code===3012?900000:Math.min(300000,Math.max(1000,Number(response.headers.get('retry-after') || 30)*1000));
+          if(status===402)cooldownMs=300000;
+          if(cooldownMs){lastError.retryAfter=Math.ceil(cooldownMs/1000);pool.cooldown(a.id,cooldownMs,{status:lastError.status,code,message:lastError.message});}
           lease.release();
           if([401,402,403,429].includes(status)||status>=500)continue;
           throw lastError;
