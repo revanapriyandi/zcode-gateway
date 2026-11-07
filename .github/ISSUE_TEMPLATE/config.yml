@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installation and usage / Pemasangan dan penggunaan
+    url: https://github.com/revanapriyandi/zcode-gateway#mulai-dari-sini
+    about: Read the setup, upgrade, promotion, and troubleshooting guides first.
+  - name: English guide
+    url: https://github.com/revanapriyandi/zcode-gateway/blob/main/README.en.md
+    about: Setup and API reference in English.

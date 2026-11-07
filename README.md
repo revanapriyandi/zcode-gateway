@@ -2,7 +2,19 @@
 
 [Bahasa Indonesia](README.md) | [English](README.en.md)
 
-Pakai model dari akun ZCode Anda di OmniRoute atau aplikasi yang mendukung API OpenAI dan Anthropic. Anda bisa menambahkan beberapa akun, melihat sisa kuota, dan memilih paket untuk tiap akun.
+[![Tests](https://github.com/revanapriyandi/zcode-gateway/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/revanapriyandi/zcode-gateway/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/revanapriyandi/zcode-gateway)](https://github.com/revanapriyandi/zcode-gateway/releases/latest)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24.14-339933?logo=nodedotjs&logoColor=white)](package.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**Pakai model GLM dari akun ZCode Anda melalui API OpenAI dan Anthropic.** Hubungkan ke OmniRoute, Claude Code, atau aplikasi yang mendukung format API tersebut, dengan satu alamat gateway untuk beberapa akun.
+
+- **Beberapa akun, satu endpoint:** login OAuth, penyimpanan akun terenkripsi, dan pembagian request ke akun yang memiliki akses model.
+- **Tiga format API:** OpenAI Chat Completions, OpenAI Responses, serta Anthropic Messages, dengan streaming dan pemanggilan tool.
+- **Promo dan event otomatis:** periksa penawaran gratis dari billing dan kampanye ZCode setiap lima menit, lalu klaim grant yang ditawarkan.
+- **Kuota terlihat:** baca sisa kuota, paket, status klaim, dan daftar model lewat API berautentikasi. Bisa dijalankan langsung dengan Node.js atau Docker.
+
+[Mulai memasang](#mulai-dari-sini) · [Perbarui instalasi](#memperbarui-instalasi-lama) · [Promo otomatis](#promo-dan-event-otomatis) · [Unduh rilis](https://github.com/revanapriyandi/zcode-gateway/releases/latest) · [Laporkan masalah](https://github.com/revanapriyandi/zcode-gateway/issues/new/choose)
 
 Diperbarui untuk format klien ZCode **3.17.2**: template, versi request, billing, serta penawaran promo dan kampanye. Ekstraksi juga diperiksa pada **3.17.1**. Hasil dan batas uji langsung tercatat di [catatan pengujian](docs/verification.md). Proyek ini dibuat secara independen; perubahan layanan ZCode bisa memerlukan pembaruan integrasi.
 
@@ -86,6 +98,23 @@ node --env-file=.env src/cli.ts serve
 
 Biarkan terminal ini berjalan. Alamat API bawaan adalah `http://127.0.0.1:8080/v1`.
 
+## Memperbarui instalasi lama
+
+Hentikan gateway dengan **Ctrl+C** dan cadangkan pasangan `.env` serta folder `data`. Dari folder proyek, ambil kode terbaru dan perbarui template dari aplikasi ZCode yang terpasang:
+
+```sh
+git pull --ff-only
+node --env-file=.env src/cli.ts provision "C:/Program Files/ZCode/resources/glm/zcode.cjs"
+node --env-file=.env src/cli.ts promos
+node --env-file=.env src/cli.ts serve
+```
+
+Sesuaikan lokasi `zcode.cjs` dengan instalasi Anda. `promos` memeriksa penawaran tanpa mengklaim; `serve` menjalankan gateway sekaligus pemeriksaan dan klaim berkala. Untuk menjalankan klaim satu kali sebelum `serve`, gunakan `node --env-file=.env src/cli.ts claim`.
+
+Jika `.env` lama berisi `ZCODE_AUTO_CLAIM=false`, ubah menjadi `true` untuk mengaktifkan klaim otomatis. Pertahankan `ZCODE_MASTER_KEY` yang cocok dengan data akun; `init` hanya diperlukan untuk pemasangan baru.
+
+Untuk Docker, setelah mengambil kode dan memperbarui template, jalankan `docker compose up -d --build`. Perubahan tiap versi tersedia di [changelog](CHANGELOG.md).
+
 ## Hubungkan ke OmniRoute
 
 Di OmniRoute, tambahkan provider **OpenAI-compatible / Chat Completions**, lalu isi:
@@ -129,6 +158,8 @@ Anda juga bisa mengganti akun di aplikasi ZCode, lalu menjalankan `import-deskto
 | Lihat akun dan ID-nya | `node --env-file=.env src/cli.ts accounts` |
 | Perbarui sisa kuota | `node --env-file=.env src/cli.ts quota` |
 | Lihat paket | `node --env-file=.env src/cli.ts plans` |
+| Periksa promo tanpa klaim | `node --env-file=.env src/cli.ts promos` |
+| Klaim penawaran gratis satu kali | `node --env-file=.env src/cli.ts claim` |
 | Nonaktifkan akun | `node --env-file=.env src/cli.ts disable ACCOUNT_ID` |
 | Aktifkan lagi | `node --env-file=.env src/cli.ts enable ACCOUNT_ID` |
 | Hapus akun dari ZCode Gateway | `node --env-file=.env src/cli.ts remove ACCOUNT_ID` |
@@ -243,6 +274,14 @@ Semua alamat tersebut memerlukan API key dari `ZCODE_API_KEYS`. Ketiga format pe
 
 ## Jika ada masalah
 
+### Model kosong atau promo belum ditemukan
+
+Daftar `/v1/models` mengikuti entitlement aktif pada akun. Login yang berhasil belum berarti akun memiliki model atau kuota yang dapat digunakan.
+
+Hentikan `serve`, lalu jalankan `quota` untuk memeriksa paket/kuota dan `promos` untuk memeriksa sumber penawaran. Pada `accounts[].autoClaim.sources`, `ok` berarti kanal berhasil dibaca. `missing_data` berarti respons tidak memuat data yang diperlukan; coba lagi nanti dan periksa aplikasi ZCode bila masalah berlanjut. Penawaran kosong bukan janji adanya grant harian.
+
+Jika baru memperbarui ZCode, jalankan `provision` ulang sebelum memulai gateway. Sertakan status sumber dan langkah reproduksi saat [melaporkan masalah](https://github.com/revanapriyandi/zcode-gateway/issues/new/choose); hapus informasi pribadi terlebih dahulu.
+
 ### Error saat membuka data akun
 
 Pesannya bisa berupa `Cannot decrypt account vault` atau, pada versi lama:
@@ -304,6 +343,8 @@ Jika OmniRoute memakai Docker, sambungkan keduanya ke jaringan Docker yang sama 
 | `ZCODE_MASTER_KEY` | Kunci untuk menyimpan dan membuka data akun. Minimal 32 karakter. |
 | `ZCODE_MASTER_KEY_FILE` | Lokasi file berisi nilai `ZCODE_MASTER_KEY`, jika ingin menyimpannya dalam file terpisah. |
 | `ZCODE_DATA_DIR` | Folder data akun. Default `./data`. |
+| `ZCODE_AUTO_CLAIM` | Pemeriksaan dan klaim penawaran gratis saat `serve` berjalan. Default aktif; isi `false` untuk mematikan. |
+| `ZCODE_AUTO_CLAIM_INTERVAL_MS` | Jeda pemeriksaan promo dalam milidetik. Default `300000` (lima menit), minimum `60000`. |
 | `HOST`, `PORT` | Alamat dan port tempat layanan berjalan. |
 
 Jangan unggah `.env`, folder `data`, token login, atau tautan login ke tempat publik. File tersebut sudah dikecualikan dari Git. Jika pindah server, pertahankan pasangan data akun dan `ZCODE_MASTER_KEY` yang cocok.
@@ -335,6 +376,8 @@ node --env-file=.env scripts/capabilities-smoke.mjs
 Tiga perintah terakhir memakai kuota akun. Uji tool memakai hasil contoh; uji gambar membuat gambar merah/biru di memori. Pengaturan pengujian lebih lanjut ada di [panduan Inggris](README.en.md#verification); hasil dan batas verifikasi ada di [catatan pengujian](docs/verification.md).
 
 ## Referensi dan lisensi
+
+Kontribusi dan laporan masalah diterima melalui GitHub. Baca [panduan kontribusi](CONTRIBUTING.md) untuk menyiapkan pengujian dan mengirim perubahan. Untuk bantuan penggunaan, gunakan [template pertanyaan](https://github.com/revanapriyandi/zcode-gateway/issues/new/choose).
 
 Kode proyek ini memakai lisensi [MIT](LICENSE). File pribadi yang diambil dari aplikasi ZCode tetap mengikuti hak pemiliknya.
 

@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "OAuth multi-account ZCode gateway with OpenAI and Anthropic protocol adapters",
+  "description": "Use ZCode GLM models through OpenAI and Anthropic APIs with multi-account OAuth and automatic promotional grants",
   "engines": {
     "node": ">=24.14"
   },
@@ -12,5 +12,25 @@
     "start": "node src/cli.ts serve",
     "check": "node scripts/check.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/revanapriyandi/zcode-gateway.git"
+  },
+  "homepage": "https://github.com/revanapriyandi/zcode-gateway#readme",
+  "bugs": {
+    "url": "https://github.com/revanapriyandi/zcode-gateway/issues"
+  },
+  "keywords": [
+    "zcode",
+    "glm",
+    "z-ai",
+    "openai-compatible",
+    "anthropic",
+    "api-gateway",
+    "oauth",
+    "omniroute",
+    "tool-calling",
+    "docker"
+  ]
 }

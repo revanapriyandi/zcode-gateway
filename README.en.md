@@ -2,7 +2,19 @@
 
 [Bahasa Indonesia](README.md) | [English](README.en.md)
 
-Use your own ZCode Start Plan accounts through OpenAI and Anthropic-compatible APIs. This standalone Node.js gateway supports OAuth login, an encrypted multi-account vault, streamed model output and function-tool conversations. It can run behind OmniRoute or be used directly.
+[![Tests](https://github.com/revanapriyandi/zcode-gateway/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/revanapriyandi/zcode-gateway/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/revanapriyandi/zcode-gateway)](https://github.com/revanapriyandi/zcode-gateway/releases/latest)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D24.14-339933?logo=nodedotjs&logoColor=white)](package.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**Use your ZCode GLM models through OpenAI and Anthropic APIs.** Connect OmniRoute, Claude Code, or compatible clients to one gateway for your own accounts.
+
+- **Multiple accounts, one endpoint:** OAuth login, encrypted account storage, and request rotation across model-entitled accounts.
+- **Three API formats:** Chat Completions, Responses, and Anthropic Messages, with streaming and function-tool conversations.
+- **Automatic promotions:** check billing offers and ZCode campaigns every five minutes, then claim offered free grants.
+- **Visible usage:** inspect account quotas, plans, claim status, and available models through authenticated APIs. Run directly with Node.js or Docker.
+
+[Install](#local-setup) · [Upgrade](#upgrade-an-existing-installation) · [Automatic promotions](#automatic-promotions-and-events) · [Download a release](https://github.com/revanapriyandi/zcode-gateway/releases/latest) · [Report an issue](https://github.com/revanapriyandi/zcode-gateway/issues/new/choose)
 
 This is an independent integration with an undocumented ZCode endpoint. It is not affiliated with Z.ai. Updated for the ZCode **3.17.2** client format, including prompt extraction, versioned requests, billing and campaign discovery. Extraction was also checked with **3.17.1**. See [verification notes](docs/verification.md) for live-test limits; provider changes can break the integration.
 
@@ -61,6 +73,21 @@ node --env-file=.env src/cli.ts import-desktop "Desktop account"
 
 This imports only your current user's existing login into the encrypted vault. It does not export tokens to the console or alter your desktop profile.
 
+## Upgrade an existing installation
+
+Stop the gateway and back up `.env` together with `data/`. From the project directory, pull the latest source and provision from your installed ZCode app:
+
+```sh
+git pull --ff-only
+node --env-file=.env src/cli.ts provision "C:/Program Files/ZCode/resources/glm/zcode.cjs"
+node --env-file=.env src/cli.ts promos
+node --env-file=.env src/cli.ts serve
+```
+
+Adjust the bundle path for your installation. `promos` discovers offers without claiming; `serve` starts scheduled discovery and claims. To run one claim cycle before starting the server, use `node --env-file=.env src/cli.ts claim`.
+
+An existing `ZCODE_AUTO_CLAIM=false` must be changed to `true` if you want automatic claims. Keep the original master key paired with the vault; `init` is only for a new installation. For Docker, rebuild and recreate the service with `docker compose up -d --build` after pulling and provisioning. See the [changelog](CHANGELOG.md) for version details.
+
 ## Multiple accounts
 
 Stop the gateway before running commands that mutate its vault:
@@ -77,6 +104,8 @@ node --env-file=.env src/cli.ts remove ACCOUNT_ID
 Selection rotates among enabled, model-entitled accounts, with one in-flight request per account. Quota, authentication and transient failures may try another account before any response content is sent. Risk-control rejection code 3012 pauses that account locally for 15 minutes and returns the error without trying to bypass its block. This delay is local policy, not an upstream reset guarantee. Streams are never replayed after output begins. Account credentials that fail authorization require a new login; the gateway does not pretend an undocumented refresh endpoint exists.
 
 `quota` reads reported plan and balance data. Unknown counters remain unknown. The scheduler uses entitlements and provider errors, rather than guessing token balances from missing fields. Automatic free-grant claims are enabled by default; see below.
+
+For an empty model catalog, stop `serve` and run `quota` to check active entitlements, then `promos` to inspect offer sources. Successful login does not guarantee an entitled model. `sources.*.reason=missing_data` means a required provider payload was absent; it is not proof that no promotions exist. Re-provision after updating the desktop app. For help, [open a usage question](https://github.com/revanapriyandi/zcode-gateway/issues/new/choose) with sanitized status information.
 
 ## Automatic promotions and events
 
