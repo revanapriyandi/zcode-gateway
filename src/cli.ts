@@ -15,14 +15,14 @@ const args=process.argv.slice(2),command=args[0] || 'help';
 const dir=resolve(process.env.ZCODE_DATA_DIR || './data');
 function envSecret(name: string){return process.env[name+'_FILE']?readFileSync(process.env[name+'_FILE']!,'utf8').trim():process.env[name] || '';}
 function vault(){return new Vault(join(dir,'accounts.enc'),envSecret('ZCODE_MASTER_KEY'));}
-function usage(){console.log(`ZCode Gateway\n\nnode src/cli.ts <command>\n\n  init                         Create local .env and data directory\n  provision <zcode.cjs>         Extract private templates from ZCode 3.16.3\n  login [zai|bigmodel] [label]  Authorize and add/update one account\n  import-desktop [label]        Import this user's existing ZCode login\n  accounts                     List account IDs and enabled models\n  quota / plans                Refresh account entitlements and balance\n  plan <id> start-plan         Select the default promotional/trial route\n  plan <id> coding-plan --key-file PATH --models MODEL,MODEL\n                               Select a subscription with its own key\n  enable <id> / disable <id>    Change account eligibility\n  remove <id>                  Delete this local login (does not revoke upstream)\n  serve                        Run authenticated HTTP service\n\nRun with node --env-file=.env src/cli.ts after init.\n`);}
+function usage(){console.log(`ZCode Gateway\n\nnode src/cli.ts <command>\n\n  init                         Create local .env and data directory\n  provision <zcode.cjs>         Extract private templates from an official ZCode client\n  login [zai|bigmodel] [label]  Authorize and add/update one account\n  import-desktop [label]        Import this user's existing ZCode login\n  accounts                     List account IDs and enabled models\n  quota / plans                Refresh account entitlements and balance\n  promos                       Discover offers and campaigns without claiming\n  claim                        Claim offered free grants once\n  plan <id> start-plan         Select the default promotional/trial route\n  plan <id> coding-plan --key-file PATH --models MODEL,MODEL\n                               Select a subscription with its own key\n  enable <id> / disable <id>    Change account eligibility\n  remove <id>                  Delete this local login (does not revoke upstream)\n  serve                        Run authenticated HTTP service\n\nRun with node --env-file=.env src/cli.ts after init.\n`);}
 async function main(){
   if(command==='help'){usage();console.log('Login opens your default browser; append --no-browser for SSH or manual authorization.');return;}
   if(command==='init'){
     mkdirSync(dir,{recursive:true,mode:0o700});
     if(existsSync('.env'))throw new Error('.env already exists');
     if(existsSync(join(dir,'accounts.enc')))throw new Error('Found an existing account vault at '+join(dir,'accounts.enc')+'. Restore its original .env / ZCODE_MASTER_KEY instead of generating unrelated keys. No files were changed.');
-    writeFileSync('.env',`ZCODE_MASTER_KEY=${randomBytes(32).toString('hex')}\nZCODE_API_KEYS=${randomBytes(32).toString('hex')}\nZCODE_DATA_DIR=./data\nHOST=127.0.0.1\nPORT=8080\n`,{mode:0o600,flag:'wx'});
+    writeFileSync('.env',`ZCODE_MASTER_KEY=${randomBytes(32).toString('hex')}\nZCODE_API_KEYS=${randomBytes(32).toString('hex')}\nZCODE_DATA_DIR=./data\nZCODE_AUTO_CLAIM=true\nZCODE_AUTO_CLAIM_INTERVAL_MS=300000\nHOST=127.0.0.1\nPORT=8080\n`,{mode:0o600,flag:'wx'});
     console.log('Created .env with private random keys. Keep it outside Git.');return;
   }
   mkdirSync(dir,{recursive:true,mode:0o700});
@@ -34,12 +34,16 @@ async function main(){
   try{
     if(command==='provision'){
       if(!args[1])throw new Error('Provide an installed official zcode.cjs path');
-      console.log(JSON.stringify(provision(resolve(args[1]),join(dir,'template.json'))));return;
+      const index=args.indexOf('--app-version');
+      if(index>=0&&!args[index+1])throw Error('Provide --app-version X.Y.Z');
+      console.log(JSON.stringify(provision(resolve(args[1]),join(dir,'template.json'),{appVersion:index>=0?args[index+1]:undefined})));return;
     }
     const v=vault();
+    const template=existsSync(join(dir,'template.json'))?JSON.parse(readFileSync(join(dir,'template.json'),'utf8')):{};
+    const refresh=(account:any)=>refreshAccount(account,fetch,template);
     if(command==='login'){
       const loginArgs=args.slice(1).filter(arg=>arg!=='--no-browser');
-      const flow=await beginLogin(loginArgs[0] || 'zai');
+      const flow=await beginLogin(loginArgs[0] || 'zai',fetch,template.appVersion);
       const cancel=new AbortController();process.once('SIGINT',()=>cancel.abort());
       console.log('Open this one-time OAuth URL in your browser. Choose the ZCode account to add:\n'+flow.authorizeUrl);
       if(process.stdout.isTTY&&process.env.TERM!=='dumb')console.log(loginLink(flow.authorizeUrl,true));
@@ -48,7 +52,7 @@ async function main(){
       const context=JSON.parse(readFileSync(join(dir,'template.json'),'utf8')).context;
       account.deviceId=context?.deviceId || randomBytes(16).toString('hex');
       const previous=v.accounts.find(a=>a.identity===account.identity);
-      const ready=await refreshAccount({...previous,...account});ready.label=loginArgs[1] || previous?.label || 'ZCode account';
+      const ready=await refresh({...previous,...account});ready.label=loginArgs[1] || previous?.label || 'ZCode account';
       const saved=v.upsert(ready);console.log(JSON.stringify({id:saved.id,label:saved.label,models:saved.models}));return;
     }
     if(command==='import-desktop'){
@@ -63,7 +67,7 @@ async function main(){
       if(!claims.user_id)throw new Error('Desktop login omitted identity');
       const context=JSON.parse(readFileSync(join(dir,'template.json'),'utf8')).context;
       const previous=v.accounts.find(a=>a.identity==='zai:'+claims.user_id);
-      const ready=await refreshAccount({...previous,identity:'zai:'+claims.user_id,token,needsLogin:false,provider:'zai',deviceId:context?.deviceId,models:[],label:args[1] || 'Desktop account'});
+      const ready=await refresh({...previous,identity:'zai:'+claims.user_id,token,needsLogin:false,provider:'zai',deviceId:context?.deviceId,models:[],label:args[1] || 'Desktop account'});
       const saved=v.upsert(ready);console.log(JSON.stringify({id:saved.id,label:saved.label,models:saved.models}));return;
     }
     if(command==='accounts'){console.log(JSON.stringify(v.publicAccounts(),null,2));return;}
@@ -76,11 +80,11 @@ async function main(){
         if(modelsIndex>=0&&args[modelsIndex+1])next.codingModels=args[modelsIndex+1].split(',').map(x=>x.trim().toLowerCase());
         if(!next.codingModels?.length)throw new Error('Set the subscription model IDs with --models');
       }
-      planSelection(next);v.upsert(await refreshAccount(next));console.log(JSON.stringify(v.publicAccounts(),null,2));return;
+      planSelection(next);v.upsert(await refresh(next));console.log(JSON.stringify(v.publicAccounts(),null,2));return;
     }
     if(command==='quota'||command==='plans'){
       for(const a of [...v.accounts]){
-        try{v.upsert(await refreshAccount(a));}catch{a.needsLogin=true;v.save();console.log('Account '+a.id+' needs reauthorization or quota refresh failed');}
+        try{v.upsert(await refresh(a));}catch{a.quota={checkedAt:Date.now(),reported:null,error:'Quota refresh failed'};v.save();console.log('Account '+a.id+' quota refresh failed');}
       }
       console.log(JSON.stringify(quotaSummary(v.accounts),null,2));return;
     }
@@ -89,14 +93,18 @@ async function main(){
       if(command==='remove')v.accounts.splice(v.accounts.indexOf(a),1);else a.enabled=command==='enable';
       v.save();console.log('Account '+command+' completed');return;
     }
-    if(command!=='serve')throw new Error('Unknown command');
-    const template=JSON.parse(readFileSync(join(dir,'template.json'),'utf8'));
+    if(!['serve','promos','claim'].includes(command))throw new Error('Unknown command');
+    if(!template.appVersion)throw Error('Provision the installed ZCode client first');
     for(const a of v.accounts)if(!a.deviceId&&template.context?.deviceId)a.deviceId=template.context.deviceId;
     v.save();
+    const quota=createQuotaReader(v,{template});
+    if(command==='promos'||command==='claim') {
+      maintenance=createAutoClaim(v,template,quota,{discoverOnly:command==='promos'});
+      await maintenance.run();console.log(JSON.stringify(quotaSummary(v.accounts),null,2));return;
+    }
     const keys=envSecret('ZCODE_API_KEYS').split(',').map(x=>x.trim()).filter(Boolean);
     if(keys.some(k=>k.length<24))throw new Error('Every API key must contain at least 24 characters');
-    const quota=createQuotaReader(v);
-    const autoClaim=maintenance=process.env.ZCODE_AUTO_CLAIM==='true'?createAutoClaim(v,template,quota,{intervalMs:Number(process.env.ZCODE_AUTO_CLAIM_INTERVAL_MS || 300000),log:event=>console.log(JSON.stringify(event))}):undefined;
+    const autoClaim=maintenance=process.env.ZCODE_AUTO_CLAIM!=='false'?createAutoClaim(v,template,quota,{intervalMs:Number(process.env.ZCODE_AUTO_CLAIM_INTERVAL_MS || 300000),log:event=>console.log(JSON.stringify(event))}):undefined;
     const server=createGateway({keys,models:()=>[...new Set(v.accounts.filter(a=>a.enabled&&!a.needsLogin).flatMap(a=>a.models))],generate:createUpstream(v,template),quota});
     const host=process.env.HOST || '127.0.0.1',port=Number(process.env.PORT || 8080);
     server.listen(port,host,()=>console.log(JSON.stringify({event:'listening',host,port,accounts:v.accounts.length})));

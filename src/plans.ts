@@ -31,7 +31,7 @@ export function quotaSummary(accounts: any[]) {
       }
     }
     const claim=a.autoClaim;
-    const autoClaim=claim?{checkedAt:claim.checkedAt,nextCheckAt:claim.nextCheckAt,status:claim.status,offeredPlans:claim.offeredPlans,plans:(claim.plans || []).map(({planId,status,code,checkedAt,retryAt}:any)=>({planId,status,code,checkedAt,retryAt}))}:null;
+    const autoClaim=claim?{checkedAt:claim.checkedAt,nextCheckAt:claim.nextCheckAt,status:claim.status,code:claim.code,retryAt:claim.retryAt,offeredPlans:claim.offeredPlans,offers:claim.offers,sources:claim.sources,campaigns:claim.campaigns,refreshFailed:claim.refreshFailed,plans:(claim.plans || []).map(({planId,source,status,code,checkedAt,retryAt,endsAt}:any)=>({planId,source,status,code,checkedAt,retryAt,endsAt}))}:null;
     publicAccounts.push({id:a.id,label:a.label,plan:a.plan || 'start-plan',selectedPlanId:a.selectedPlanId || null,plans,models:a.models,quotas:accountQuotas,quotaError:a.quota?.error || null,checkedAt:a.quota?.checkedAt || null,quotaKnown:buckets.length>0,needsLogin:!!a.needsLogin,autoClaim});
   }
   const quotaBuckets=Object.fromEntries(Object.entries(quotas).map(([model,bucket])=>[model.replace(/[^a-z0-9]/g,'_'),bucket]));

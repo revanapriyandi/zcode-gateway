@@ -4,7 +4,7 @@
 
 Use your own ZCode Start Plan accounts through OpenAI and Anthropic-compatible APIs. This standalone Node.js gateway supports OAuth login, an encrypted multi-account vault, streamed model output and function-tool conversations. It can run behind OmniRoute or be used directly.
 
-This is an independent integration with an undocumented ZCode endpoint. It is not affiliated with Z.ai. Compatibility was checked against ZCode desktop **3.16.3**, with **GLM-5.3** and **GLM-5.3-Flash** entitlements. Provider changes can break the integration.
+This is an independent integration with an undocumented ZCode endpoint. It is not affiliated with Z.ai. Updated for the ZCode **3.17.2** client format, including prompt extraction, versioned requests, billing and campaign discovery. Extraction was also checked with **3.17.1**. See [verification notes](docs/verification.md) for live-test limits; provider changes can break the integration.
 
 ## Supported endpoints
 
@@ -43,7 +43,9 @@ node --env-file=.env src/cli.ts provision 'C:\Program Files\ZCode\resources\glm\
 
 `init` creates `.env` with independent random ZCODE_MASTER_KEY and ZCODE_API_KEYS values. For the API Key field in OmniRoute or another app, copy one value from `ZCODE_API_KEYS` in `.env`, without the `ZCODE_API_KEYS=` prefix. Do not use `ZCODE_MASTER_KEY` for API requests. Keep `.env` and `data/` out of Git. The server binds to `127.0.0.1:8080` by default.
 
-Provisioning extracts only the supported prompt functions from your installed official client into `data/template.json`. It does not execute the installed application's entrypoint or modify ZCode. Vendor prompt text is **not distributed in this repository** and is not covered by this project's MIT license. The extractor fails when its expected bundle structure is absent; do not force it against another release without verification.
+Provisioning extracts the supported private prompt sections from your installed official client into `data/template.json`. It does not execute the installed application's entrypoint or modify ZCode. Vendor prompt text is **not distributed in this repository** and is not covered by this project's MIT license. The extractor fails when its expected bundle structure is absent; do not force it against another release without verification.
+
+The app version is read from adjacent `package.json` or `app.asar` metadata and passed to OAuth, billing, claims and inference. Run `provision` again after updating the desktop app. For a standalone bundle without its metadata, use `provision /path/zcode.cjs --app-version 3.17.2` with its actual release version. Legacy 3.16.3 templates remain readable. Unknown prompt structures fail instead of guessing compatibility.
 
 The private template also records the provisioning machine's platform, shell, locale, timezone and working directory. Both upstream headers and environment context preserve those original values when the gateway moves to a VPS. This keeps the request consistent with the desktop profile being delegated; it does not grant the gateway access to that desktop's files or tools. Treat this metadata as private and regenerate the template when intentionally moving to a different client profile.
 
@@ -74,15 +76,28 @@ node --env-file=.env src/cli.ts remove ACCOUNT_ID
 
 Selection rotates among enabled, model-entitled accounts, with one in-flight request per account. Quota, authentication and transient failures may try another account before any response content is sent. Risk-control rejection code 3012 pauses that account locally for 15 minutes and returns the error without trying to bypass its block. This delay is local policy, not an upstream reset guarantee. Streams are never replayed after output begins. Account credentials that fail authorization require a new login; the gateway does not pretend an undocumented refresh endpoint exists.
 
-`quota` reads reported plan and balance data. Unknown counters remain unknown. The scheduler uses entitlements and provider errors, rather than guessing token balances from missing fields. Automatic claims are opt-in; see below.
+`quota` reads reported plan and balance data. Unknown counters remain unknown. The scheduler uses entitlements and provider errors, rather than guessing token balances from missing fields. Automatic free-grant claims are enabled by default; see below.
 
-## Automatic free-plan claims
+## Automatic promotions and events
 
-Set `ZCODE_AUTO_CLAIM=true` in `.env` and restart the service. `ZCODE_AUTO_CLAIM_INTERVAL_MS` defaults to `300000` (five minutes), with a one-minute minimum. Docker Compose forwards both settings; recreate the service after changing them.
+The worker runs at startup and every five minutes without inbound HTTP traffic. Automatic claims are **enabled by default**; set `ZCODE_AUTO_CLAIM=false` to opt out. An existing explicit false remains respected. `ZCODE_AUTO_CLAIM_INTERVAL_MS` defaults to `300000`, with a one-minute minimum. Restart the process or recreate the Compose service after changing settings.
 
-The worker refreshes entitlements and checks provider previews at startup and periodically without inbound HTTP traffic. It considers unexpired model grants without payment fields, skips subscription accounts and accounts requiring login, and never purchases a paid plan. Successful claims and retry holds are persisted in the encrypted vault. Claims already held for the same period are skipped; a later period can reuse the same plan ID. Future activation does not prevent claiming, but model discovery waits for entitlement activation.
+Two official channels are queried per eligible Start Plan account: billing preview model grants, and marketing touch banner/popup buttons with the explicit `claim_zcode_plan` action. Campaign names and grant IDs come from provider responses. Paid preview entries, external URLs, navigation, invitation and copy actions are never executed. Subscription accounts, disabled accounts and accounts requiring login are skipped.
 
-Authenticated `/api/usage` and `/api/plans` expose per-account `autoClaim` status. An empty preview produces `idle`. Required or unknown CAPTCHA verification requires manual action, as does reauthorization. Availability and eligibility remain provider-controlled; a `one_time` grant does not promise daily refills.
+Offers are deduplicated across channels. Real expiry from claim responses prevents successful undated previews from suppressing future periods forever. Unknown claim expiry uses a bounded retry hold. After claims, entitlement discovery reads **billing balance**, replacing the retired `billing/current` endpoint. Capability buckets are matched to active plan instances; future and expired entitlements are excluded.
+
+Stop `serve` before either one-shot command:
+
+```sh
+node --env-file=.env src/cli.ts promos  # Discover only; no claims
+node --env-file=.env src/cli.ts claim   # Run one free-grant claim cycle
+```
+
+Both commands persist discovery diagnostics in the encrypted vault. Authenticated `/api/usage` and `/api/plans` expose `accounts[].autoClaim`, including `sources`, `offers`, sanitized `campaigns`, claim results, grant expiry and retry times. `idle` means both channels were read successfully, including empty results; `discovery_partial` means a source was unavailable; `discovery_failed` means neither succeeded. Success codes without required payloads report `missing_data` instead of pretending discovery was complete.
+
+HTTP and provider error codes are checked separately, including numeric string codes and plain-text HTTP errors. `Retry-After` is honored. CAPTCHA, risk-control and login failures stop further claims for that account. The worker does not bypass verification, buy plans, open campaign links or send invitations.
+
+Coverage is limited to the two verified official offer channels. Referral, payment or manual eligibility conditions remain provider-controlled. Unknown future endpoints are not automatically supported. A `daily` entitlement period does not guarantee a new offer every day, and a `one_time` grant does not promise refills.
 
 Model discovery refreshes before publishing the catalog or rejecting a missing model. During account cooldown, rate-limit failures retain their upstream status and safe error reason with `Retry-After` instead of becoming a generic no-account error.
 

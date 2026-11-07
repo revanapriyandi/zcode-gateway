@@ -10,9 +10,9 @@ test('forced quota refresh discovers new grants despite the normal cache',async(
   calls++;
   return Response.json({code:0,data:{plans:available?[{status:'active',entitlements:[{capabilities:['model:glm-5.3-flash']}]}]:[],balances:[]}});
  }});
- await quota();assert.deepEqual(a.models,[]);assert.equal(calls,2);
- available=true;await quota();assert.deepEqual(a.models,[]);assert.equal(calls,2);
- await quota({force:true});assert.deepEqual(a.models,['glm-5.3-flash']);assert.equal(calls,4);
+ await quota();assert.deepEqual(a.models,[]);assert.equal(calls,1);
+ available=true;await quota();assert.deepEqual(a.models,[]);assert.equal(calls,1);
+ await quota({force:true});assert.deepEqual(a.models,['glm-5.3-flash']);assert.equal(calls,2);
 });
 
 test('quota reports auto-claim status without account credentials',()=>{
