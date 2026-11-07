@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { setTimeout as pause } from 'node:timers/promises';
 
 const origin = 'https://zcode.z.ai';
-export async function beginLogin(provider = 'zai', fetcher: any = fetch, version = '3.16.3') {
+export async function beginLogin(provider = 'zai', fetcher: any = fetch, version = '3.17.2') {
   if (!['zai', 'bigmodel'].includes(provider)) throw new Error('Unknown OAuth provider');
   const pollToken = randomBytes(32).toString('hex');
   const response = await fetcher(origin + '/api/v1/oauth/cli/init', { method: 'POST', headers: { Authorization: 'Bearer '+pollToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ provider }), redirect: 'error', signal: AbortSignal.timeout(30000) });

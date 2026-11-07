@@ -4,7 +4,7 @@
 
 Pakai model dari akun ZCode Anda di OmniRoute atau aplikasi yang mendukung API OpenAI dan Anthropic. Anda bisa menambahkan beberapa akun, melihat sisa kuota, dan memilih paket untuk tiap akun.
 
-Sudah diuji dengan ZCode **3.16.3**, **GLM-5.3**, dan **GLM-5.3-Flash**. Proyek ini dibuat secara independen. Jika ZCode mengubah layanannya, integrasi ini mungkin perlu diperbarui.
+Diperbarui untuk format klien ZCode **3.17.2**: template, versi request, billing, serta penawaran promo dan kampanye. Ekstraksi juga diperiksa pada **3.17.1**. Hasil dan batas uji langsung tercatat di [catatan pengujian](docs/verification.md). Proyek ini dibuat secara independen; perubahan layanan ZCode bisa memerlukan pembaruan integrasi.
 
 ## Mulai dari sini
 
@@ -46,7 +46,15 @@ node --env-file=.env src/cli.ts provision "C:/Program Files/ZCode/resources/glm/
 
 Ganti lokasi file jika ZCode Anda terpasang di folder lain. Untuk sistem lain, gunakan lokasi `resources/glm/zcode.cjs` dari instalasi ZCode Anda.
 
-Perintah ini membuat `data/template.json` dari aplikasi ZCode yang terpasang. File ini diperlukan agar request bisa dikirim ke ZCode. Instalasi ZCode Anda tetap seperti semula.
+Perintah ini membuat `data/template.json` dari aplikasi ZCode yang terpasang. Versi klien dibaca dari metadata aplikasi; header login, billing, klaim, dan inferensi memakai versi tersebut. Instalasi ZCode Anda tetap seperti semula. Jalankan `provision` lagi setelah memperbarui aplikasi.
+
+Jika hanya menyalin `zcode.cjs` tanpa metadata aplikasi, sertakan versi asalnya secara eksplisit:
+
+```sh
+node --env-file=.env src/cli.ts provision /lokasi/zcode.cjs --app-version 3.17.2
+```
+
+Template lama versi 3.16.3 tetap dapat dibaca. Ekstraktor akan menolak struktur prompt yang belum dikenali; tidak ada jaminan kompatibilitas dengan rilis yang belum diuji.
 
 ### 4. Tambahkan akun
 
@@ -129,22 +137,38 @@ Ganti `ACCOUNT_ID` dengan ID dari perintah `accounts`. Menghapus akun di sini ti
 
 Request dibagi bergiliran ke akun aktif yang mendukung model tersebut. Setiap akun menangani satu request pada satu waktu. Jika satu akun gagal sebelum jawaban mulai dikirim, ZCode Gateway dapat mencoba akun lain.
 
-## Klaim otomatis paket gratis
+## Promo dan event otomatis
 
-Klaim otomatis dapat diaktifkan untuk akun Start Plan yang terhubung dengan menambahkan pengaturan berikut ke `.env`, lalu memulai ulang layanan:
+Pemeriksaan dan klaim grant gratis **aktif secara default** ketika `serve` berjalan. Gateway memeriksa saat mulai dan setiap lima menit, termasuk ketika tidak ada request API. Pengaturannya:
 
 ```dotenv
 ZCODE_AUTO_CLAIM=true
 ZCODE_AUTO_CLAIM_INTERVAL_MS=300000
 ```
 
-Gateway memeriksa penawaran saat mulai dan setiap lima menit, tanpa menunggu request masuk. Interval minimum adalah satu menit. Untuk Docker Compose, jalankan ulang `docker compose up -d` setelah mengubah pengaturan.
+Interval minimum satu menit. Isi `ZCODE_AUTO_CLAIM=false` untuk mematikannya. Nilai `false` yang sudah ada tetap dihormati. Restart layanan setelah mengubah `.env`; pada Docker, jalankan `docker compose up -d` untuk menerapkan pengaturan.
 
-Hanya paket grant model yang ditawarkan endpoint preview, belum kedaluwarsa, dan tidak mencantumkan biaya yang diproses. Langganan berbayar tidak dibeli. Paket yang aktif pada periode yang sama serta klaim yang sudah berhasil tidak diulang; paket periode berikutnya tetap diperiksa meskipun ID-nya sama. Paket boleh diklaim sebelum waktu aktivasinya, tetapi model baru tersedia setelah entitlement aktif.
+Dua sumber resmi dibaca untuk setiap akun Start Plan aktif:
 
-Status per akun tersedia pada `autoClaim` di respons berautentikasi `/api/usage` atau `/api/plans`. Jika penawaran kosong, statusnya `idle`. CAPTCHA atau login ulang yang diwajibkan provider memerlukan tindakan manual. Fitur ini tidak menjamin ada penawaran setiap hari; paket berperiode `one_time` tidak menjanjikan isi ulang kuota harian.
+- **Billing preview**: grant model yang ditawarkan akun, belum kedaluwarsa, dan tidak mencantumkan biaya.
+- **Marketing touch**: kampanye banner dan popup dengan aksi eksplisit `claim_zcode_plan`. Nama event dan ID paket berasal dari respons provider; tidak dikunci ke daftar promo tertentu.
 
-Daftar model juga disegarkan sebelum katalog ditampilkan dan sebelum model yang belum tercatat ditolak. Jika provider menolak request dengan rate limit, gateway mempertahankan penyebab penolakan serta header `Retry-After` selama masa jeda akun.
+Penawaran yang sama dari dua sumber hanya diproses sekali. Masa berlaku dari respons klaim disimpan agar preview tanpa tanggal tidak menghalangi klaim periode berikutnya. Setelah klaim, model dan kuota diperbarui dari **billing balance**, pengganti endpoint `billing/current` yang sudah tidak dipakai klien terbaru. Model menunggu waktu aktivasi entitlement.
+
+Untuk memeriksa tanpa mengklaim atau menjalankan satu siklus klaim, hentikan `serve` terlebih dahulu:
+
+```sh
+node --env-file=.env src/cli.ts promos
+node --env-file=.env src/cli.ts claim
+```
+
+`promos` hanya melakukan discovery; `claim` mencoba grant gratis yang ditawarkan. Keduanya menyimpan status pemeriksaan di vault. Akun yang dinonaktifkan, perlu login ulang, atau memakai route Coding Plan dilewati.
+
+Respons berautentikasi `/api/usage` dan `/api/plans` memuat `accounts[].autoClaim`: `sources`, `offers`, ringkasan `campaigns`, hasil klaim, masa berlaku, dan waktu retry. `idle` berarti kedua kanal berhasil dibaca; `discovery_partial` berarti hanya sebagian sumber tersedia, sedangkan `discovery_failed` berarti discovery gagal. Kode sukses tanpa payload diberi alasan `missing_data`, bukan dianggap bukti bahwa seluruh promo kosong. Daftar kosong dapat tetap menghasilkan `idle`.
+
+Rate limit mengikuti `Retry-After`. Respons CAPTCHA, login ulang, atau pembatasan risiko menghentikan klaim berikutnya pada akun itu dan menyimpan status tindakan yang diperlukan. Tidak ada pemecahan CAPTCHA, pembelian langganan, pembukaan tautan promosi, atau pengiriman undangan otomatis.
+
+**Cakupan otomatis mengikuti kanal dan izin yang disediakan ZCode.** Event dengan syarat referral, pembelian, atau tindakan manual tetap membutuhkan syarat tersebut. Promo dari kanal lain atau endpoint baru tidak dijamin terambil. Label `daily` menunjukkan periode entitlement provider; gateway tidak membuat kuota baru dan tidak menjamin promo tersedia setiap hari.
 
 ## Ganti paket yang dipakai
 

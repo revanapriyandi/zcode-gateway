@@ -12,7 +12,7 @@ function fixture(extra={},offers=[offer],config={enabled:false},claimCode=0){
  const fetcher=async(url,init)=>{
   calls.push({url,init});
   if(url.includes('/preview?'))return Response.json({code:0,data:{plans:offers}});
-  if(url.endsWith('/agent/configs'))return Response.json({code:0,data:{configs:config===null?{}:{captcha:config}}});
+  if(url.includes('/marketing/touch?'))return Response.json({code:0,data:{deliveries:[]}});
   if(url.endsWith('/claim'))return Response.json({code:claimCode,data:claimCode===0?{plan:{plan_id:JSON.parse(init.body).plan_id}}:{}});
   throw Error('Unexpected endpoint');
  };
@@ -71,11 +71,9 @@ test('already active account plans are not claimed again',async()=>{
  const f=fixture({plans:[offer]});await f.runner.run();assert.equal(f.posts().length,0);
 });
 
-test('CAPTCHA enabled or unknown requires manual action without a claim request',async()=>{
- for(const config of [{enabled:true},null]){
-  const f=fixture({},[offer],config);await f.runner.run();
-  assert.equal(f.posts().length,0);assert.equal(f.a.autoClaim.plans[0].status,'captcha_required');
- }
+test('provider CAPTCHA requirement is preserved without trying to bypass verification',async()=>{
+ const f=fixture({},[offer],null,3007);await f.runner.run();await f.runner.run();
+ assert.equal(f.posts().length,1);assert.equal(f.a.autoClaim.plans[0].status,'captcha_required');
 });
 
 test('provider CAPTCHA and ineligibility responses are recorded with a retry hold',async()=>{
@@ -95,7 +93,7 @@ test('failed preview leaves current models intact and stores no raw error or cre
  const f=fixture({models:['glm-5.3-flash']});
  const runner=createAutoClaim(f.vault,template,async()=>{}, {now:()=>now,fetcher:async()=>{throw Error('private-token');},log:()=>{}});
  await runner.run();assert.deepEqual(f.a.models,['glm-5.3-flash']);
- assert.equal(f.a.autoClaim.status,'preview_failed');assert.doesNotMatch(JSON.stringify(f.a.autoClaim),/private-token/);
+ assert.equal(f.a.autoClaim.status,'discovery_failed');assert.doesNotMatch(JSON.stringify(f.a.autoClaim),/private-token/);
 });
 
 test('stopped runner does not perform further network operations',async()=>{
